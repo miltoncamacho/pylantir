@@ -1,7 +1,3 @@
 {
-    "allowed_ae_titles": [
-        "AE_TITLE_1",
-        "AE_TITLE_2",
-        "AE_TITLE_3"
-    ]
+    "allowed_aet": []
 }
