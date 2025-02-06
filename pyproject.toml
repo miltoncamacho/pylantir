@@ -7,7 +7,7 @@ name =  "pylantir"
 authors = [
     {name = "Milton Camacho", email = "miltoncamachoicc@gmail.com"},
 ]
-description = "Python DICOM "
+description = "Python - DICOM Modality WorkList"
 readme = "README.md"
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -28,6 +28,9 @@ dependencies = [
     "redcap",
     "logging"
 ]
+
+[project.scripts]
+pylantir = "pylantir.cli.run:main"
 
 [project.optional-dependencies]
 spark = [
@@ -54,9 +57,9 @@ test = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/microsoft/python-package-template/tree/main#readme"
-Source = "https://github.com/microsoft/python-package-template"
-Tracker = "https://github.com/microsoft/python-package-template/issues"
+Documentation = "https://github.com/miltoncamacho/pylantir/tree/main#readme"
+Source = "https://github.com/miltoncamacho/pylantir"
+Tracker = "https://github.com/miltoncamacho/pylantir/issues"
 
 [tool.flit.module]
 name = "pylantir"
