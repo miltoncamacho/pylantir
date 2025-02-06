@@ -24,8 +24,6 @@ dynamic = ["version"]
 
 dependencies = [
     "pynetdicom",
-    "pysqlcipher3",
-    "sqlcipher",
     "sqlalchemy",
     "PyCap",
     "uuid"
