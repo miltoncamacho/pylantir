@@ -9,7 +9,7 @@ import pathlib as Path
 import coloredlogs
 
 from ..mwl_server import run_mwl_server
-from ..populate_db import populate_data
+from ..redcap_to_db import sync_redcap_to_db
 
 #TODO add tests
 
@@ -35,9 +35,15 @@ lgr = logging.getLogger(__name__)
 def parse_args():
     default_config_path = str(pkg_resources.files("pylantir").joinpath("config/mwl_config.json"))
 
-    p = argparse.ArgumentParser(description="pylantir - Python Modality WorkList and Modality Performed Procedure Step compliance")
-    p.add_argument("command", help="start or test")
-    p.add_argument("--AE", help="AE Title for the server")
+    p = argparse.ArgumentParser(description="pylantir - Python DICOM Modality WorkList and Modality Performed Procedure Step compliance")
+    p.add_argument("command",
+                    help="""
+                        Command to run:
+                        - start: start the MWL server
+                        - test: run tests for MWL and MPPS (TODO: comming later)
+                    """,
+                    choices=["start", "test"])
+    p.add_argument("--AEtitle", help="AE Title for the server")
     p.add_argument("--ip", help="IP/host address for the server", default="0.0.0.0")
     p.add_argument("--port", type=int, help="port for the server", default=4242)
 
@@ -46,6 +52,9 @@ def parse_args():
         help="""
             Path to the configuration JSON file containing pylantir configs:
             - allowed_aet: list of allowed AE titles e.g. ["MRI_SCANNER", "MRI_SCANNER_2"]
+            - mri_visit_session_mapping: mapping of MRI visit to session e.g. {"T1": "1", "T2": "2"}
+            - site: site ID:string
+            - protocol: {"site": "protocol_name"}
         """, #TODO: allow more usages
         default=None,
     )
@@ -84,6 +93,7 @@ def parse_args():
         default=None,
         type=str,
         help="SOPInstanceUID to test MPPS",
+    )
 
     return p.parse_args()
 
@@ -128,8 +138,20 @@ def main() -> None:
     # Extract allowed AE Titles (default to empty list if missing)
     allowed_aet = config.get("allowed_aet", [])
 
+    # Extract mri_visit_session_mapping (default to empty list if missing)
+    mri_visit_session_mapping = config.get("mri_visit_session_mapping", {})
+
+    # Extract the site id
+    site = config.get("site", None)
+
+    # Extract not_to_pupulate
+
+    # EXtract protocol mapping
+    protocol = config.get("protocol", None)
+
     if args.command == "start":
-        populate_data()
+
+        redcap_to_db(mri_visit_mapping=mri_visit_session_mapping, site_id=site, protocol=protocol) #TODO: add filters to participant registration dicom fields not to populate in the worklist through the config not to populate
 
         run_mwl_server(
             host=args.ip,
@@ -138,6 +160,8 @@ def main() -> None:
             allowed_aets=args.allowed_aet,
         )
 
+    if args.commad == "test":
+        lgr.info("Running tests for MWL and MPPS will be available soon.")
 
 if __name__ == "__main__":
     main()

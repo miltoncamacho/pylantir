@@ -1,3 +1,11 @@
 {
-    "allowed_aet": []
+    "allowed_aet": [],
+    "mri_visit_session_mapping":{
+                                    "T1": "1",
+                                    "T2": "2",
+                                    "T3": "3"
+                                },
+    "site": "792",
+    "not_to_populate": [],
+    "protocol": {"792":"BRAIN_MRI_3T"}
 }

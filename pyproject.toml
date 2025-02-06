@@ -24,9 +24,11 @@ dynamic = ["version"]
 
 dependencies = [
     "pynetdicom",
+    "pysqlcipher3",
+    "sqlcipher",
     "sqlalchemy",
-    "redcap",
-    "logging"
+    "PyCap",
+    "uuid"
 ]
 
 [project.scripts]
