@@ -1,7 +1,7 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.models import Base
+from .models import Base
 
 def get_engine(db_path="worklist.db", password=None, echo=False):
     """
