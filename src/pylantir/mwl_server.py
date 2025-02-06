@@ -207,7 +207,7 @@ def handle_mpps_n_set(event):
 # --------------------------------------------------------------------
 # Start MWL + MPPS SCP Server
 # --------------------------------------------------------------------
-def run_mwl_server(host="0.0.0.0", port=4242, aetitle="MWL_SERVER"):
+def run_mwl_server(host="0.0.0.0", port=4242, aetitle="MWL_SERVER", allowed_aets=""):
     """Starts an MWL + MPPS SCP."""
     ae = AE(ae_title=aetitle)
 
@@ -217,7 +217,7 @@ def run_mwl_server(host="0.0.0.0", port=4242, aetitle="MWL_SERVER"):
     ae.add_supported_context(Verification)
 
     # Accept connections only from allowed AE Titles
-    ae.require_calling_aet = ACCEPTED_CALLING_AETS
+    ae.require_calling_aet = allowed_aets
 
     # Register event handlers
     handlers = [
