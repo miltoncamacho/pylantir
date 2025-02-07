@@ -101,7 +101,7 @@ def handle_mwl_find(event):
 
     # Only return worklist entries that are still scheduled
     query = query.filter(
-        or_(WorklistItem.status == "SCHEDULED", WorklistItem.status == "IN_PROGRESS")
+        or_(WorklistItem.performed_procedure_step_status == "SCHEDULED", WorklistItem.performed_procedure_step_status == "IN_PROGRESS")
     )
 
     results = query.all()
@@ -157,7 +157,7 @@ def handle_mpps_n_create(event):
     if study_uid:
         entry = session.query(WorklistItem).filter_by(study_instance_uid=study_uid).first()
         if entry:
-            entry.status = "IN_PROGRESS"
+            entry.performed_procedure_step_status = "IN_PROGRESS"
             session.commit()
             logging.info(f"DB updated: StudyInstanceUID {study_uid} set to IN_PROGRESS")
     session.close()
@@ -190,11 +190,11 @@ def handle_mpps_n_set(event):
         entry = session.query(WorklistItem).filter_by(study_instance_uid=study_uid).first()
         if entry:
             if new_status.upper() == "COMPLETED":
-                entry.status = "COMPLETED"
+                entry.performed_procedure_step_status = "COMPLETED"
                 session.commit()
                 logging.info(f"DB updated: StudyInstanceUID {study_uid} set to COMPLETED")
             elif new_status.upper() == "DISCONTINUED":
-                entry.status = "DISCONTINUED"
+                entry.performed_procedure_step_status = "DISCONTINUED"
                 session.commit()
                 logging.info(f"DB updated: StudyInstanceUID {study_uid} set to DISCONTINUED")
     session.close()
