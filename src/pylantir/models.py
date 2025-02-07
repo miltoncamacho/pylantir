@@ -12,7 +12,7 @@ Base = declarative_base()
 
 class WorklistItem(Base):
     __tablename__ = 'worklist_items'
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     study_instance_uid = Column(String(100))
     # Basic patient attributes
@@ -22,7 +22,7 @@ class WorklistItem(Base):
     patient_sex = Column(String(1))         # 'M'/'F' or other
     patient_weight = Column(String(10), default=100)
     accession_number = Column(String(50))
-    
+
     # Modality worklist attributes
     referring_physician_name = Column(String(100))
     modality = Column(String(10))
@@ -34,9 +34,9 @@ class WorklistItem(Base):
     procedure_description = Column(String(200))
     protocol_name = Column(String(100))
     station_name = Column(String(100))
-    status = Column(String, default="SCHEDULED") 
+    performed_procedure_step_status = Column(String, default="SCHEDULED")
 
-    
+
     def __repr__(self):
         return (f"<WorklistItem(id={self.id}, study_instance_uid={self.study_instance_uid}, patient_name={self.patient_name}, "
                 f"patient_id={self.patient_id}, modality={self.modality})>")
