@@ -28,7 +28,7 @@ def fetch_redcap_entries():
     ]
 
     # Fetch REDCap records (NO export_events argument)
-    records = project.export_records(fields=fields, format="json")
+    records = project.export_records(fields=fields, format_type="json")
 
     # Extract `redcap_event_name` from each entry if available
     for record in records:
@@ -43,7 +43,7 @@ def fetch_redcap_entries():
 def age_binning():
     return None
 
-def generate_sop_instance_uid():
+def generate_instance_uid():
     """Generate a valid Study Instance UID."""
     return f"1.2.840.10008.3.1.2.3.4.{uuid.uuid4().int}"
 
@@ -112,7 +112,7 @@ def sync_redcap_to_db(mri_visit_mapping=None,site_id=None,protocol=None) -> None
         else:
             logging.info(f"Adding new worklist entry for PatientID {PatientID}")
             new_entry = WorklistItem(
-                study_instance_uid=study_uid,
+                study_instance_uid=generate_instance_uid(),
                 patient_name=record.get("patient_name"),
                 patient_id=record.get("patient_id"),
                 patient_birth_date=record.get("youth_dob_y", "19000101"),
