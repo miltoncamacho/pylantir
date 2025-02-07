@@ -1,9 +1,9 @@
 {
     "allowed_aet": [],
     "mri_visit_session_mapping":{
-                                    "T1": "1",
-                                    "T2": "2",
-                                    "T3": "3"
+                                    "t1_arm_1": "1",
+                                    "t2_arm_1": "2",
+                                    "t3_arm_1": "3"
                                 },
     "site": "792",
     "not_to_populate": [],
