@@ -2,14 +2,14 @@ from pylantir.db_setup import Session
 from pylantir.models import WorklistItem
 
 # Define the target StudyInstanceUID or PatientID
-target_study_uid = "1.2.3.4.5.6.7.8.3"
+# target_study_uid = "1.2.3.4.5.6.7.8.3"
 # target_patient_id = "12345"  # Uncomment if you want to filter by patient ID
 
 # Start a new session
 session = Session()
 
 # Query the database
-results = session.query(WorklistItem).filter_by(study_instance_uid=target_study_uid).all()
+results = session.query(WorklistItem).all()
 # results = session.query(WorklistItem).filter_by(patient_id=target_patient_id).all()  # Filter by patient ID instead
 
 # Close the session
