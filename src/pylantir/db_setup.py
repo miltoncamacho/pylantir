@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from .models import Base
 
-def get_engine(db_path="worklist.db", password=None, echo=False):
+def get_engine(db_path="worklist.db", echo=False):
     """
     Create a SQLAlchemy engine for an encrypted SQLite database.
 
@@ -21,10 +21,7 @@ def get_engine(db_path="worklist.db", password=None, echo=False):
         os.makedirs(db_dir)
 
     # Construct the connection string
-    if password:
-        connection_string = f"sqlite+pysqlcipher://:{password}@/{db_path}"
-    else:
-        connection_string = f"sqlite:///{db_path}"
+    connection_string = f"sqlite:///{db_path}"
 
     # Create the engine
     engine = create_engine(connection_string, echo=echo)
@@ -32,11 +29,10 @@ def get_engine(db_path="worklist.db", password=None, echo=False):
 
 # Load environment variables (you can use dotenv for more flexibility)
 DB_PATH = os.getenv("DB_PATH", "worklist.db")  # Default: current directory
-DB_PASSWORD = os.getenv("DB_PASSWORD", None)   # Default: no password
 DB_ECHO = os.getenv("DB_ECHO", "False").lower() in ("true", "1")
 
 # Create the engine
-engine = get_engine(db_path=DB_PATH, password=DB_PASSWORD, echo=DB_ECHO)
+engine = get_engine(db_path=DB_PATH, echo=DB_ECHO)
 
 # Create tables if they do not already exist
 Base.metadata.create_all(engine)
