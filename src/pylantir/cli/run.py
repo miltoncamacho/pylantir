@@ -49,6 +49,7 @@ def parse_args():
 
     p.add_argument(
         "--pylantir_config",
+        type=str,
         help="""
                 Path to the configuration JSON file containing pylantir configs:
                 - allowed_aet: list of allowed AE titles e.g. ["MRI_SCANNER", "MRI_SCANNER_2"]
@@ -112,7 +113,7 @@ def load_config(config_path=None):
     if config_path is None:
         config_path = pkg_resources.files("pylantir").joinpath("config/mwl_config.json")
 
-    config_path = Path(config_path)  # Ensure it's a Path object
+    config_path = Path.Path(config_path)  # Ensure it's a Path object
 
     try:
         # Load configuration file
@@ -145,23 +146,28 @@ def main() -> None:
     # Extract the site id
     site = config.get("site", None)
 
-    # Extract not_to_pupulate
+    # Extract the redcap to worklist mapping
+    redcap2wl = config.get("redcap2wl", {})
 
     # EXtract protocol mapping
-    protocol = config.get("protocol", None)
+    protocol = config.get("protocol", {})
 
     if args.command == "start":
 
-        redcap_to_db(mri_visit_mapping=mri_visit_session_mapping, site_id=site, protocol=protocol) #TODO: add filters to participant registration dicom fields not to populate in the worklist through the config not to populate
+        sync_redcap_to_db(mri_visit_mapping=mri_visit_session_mapping,
+                    site_id=site,
+                    protocol=protocol,
+                    redcap2wl=redcap2wl,
+                    ) #TODO: add filters to participant registration dicom fields not to populate in the worklist through the config not to populate
 
         run_mwl_server(
             host=args.ip,
             port=args.port,
-            aetitle=args.AE,
-            allowed_aets=args.allowed_aet,
+            aetitle=args.AEtitle,
+            allowed_aets=allowed_aet,
         )
 
-    if args.commad == "test":
+    if args.command == "test":
         lgr.info("Running tests for MWL and MPPS will be available soon.")
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ def fetch_redcap_entries(redcap_fields : list) -> list:
     valid_fields = {field["field_name"] for field in project.export_metadata()}
 
     # Fetch REDCap records (NO export_events argument)
-    redcap_fields = [field for field in redcap2wl.keys() if field in valid_fields]
+    redcap_fields = [field for field in redcap_fields if field in valid_fields]
 
     if not redcap_fields:
         logging.error("No valid REDCap fields found in provided mapping.")
@@ -175,4 +175,4 @@ def sync_redcap_to_db(
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    sync_redcap_to_db(mri_visit_mapping=None,site_id=None,protocol=None)
+    sync_redcap_to_db(mri_visit_mapping=None,site_id=None,protocol=None, redcap2wl=None)
