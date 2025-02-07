@@ -50,12 +50,13 @@ def parse_args():
     p.add_argument(
         "--pylantir_config",
         help="""
-            Path to the configuration JSON file containing pylantir configs:
-            - allowed_aet: list of allowed AE titles e.g. ["MRI_SCANNER", "MRI_SCANNER_2"]
-            - mri_visit_session_mapping: mapping of MRI visit to session e.g. {"T1": "1", "T2": "2"}
-            - site: site ID:string
-            - protocol: {"site": "protocol_name"}
-        """, #TODO: allow more usages
+                Path to the configuration JSON file containing pylantir configs:
+                - allowed_aet: list of allowed AE titles e.g. ["MRI_SCANNER", "MRI_SCANNER_2"]
+                - mri_visit_session_mapping: mapping of MRI visit to session e.g., {"T1": "1", "T2": "2"}
+                - site: site ID:string
+                - protocol: {"site": "protocol_name"}
+                - redcap2wl: dictionary of redcap fields to worklist fields mapping e.g., {"redcap_field": "worklist_field"}
+            """, #TODO: allow more usages
         default=None,
     )
 

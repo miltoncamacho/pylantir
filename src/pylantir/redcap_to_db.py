@@ -13,26 +13,37 @@ REDCAP_API_TOKEN = os.getenv("REDCAP_API_TOKEN", "TOKEN")
 # Create a session
 Session = sessionmaker(bind=engine)
 
-def fetch_redcap_entries():
+def fetch_redcap_entries(redcap_fields : list) -> list:
     """Fetch scheduled procedures from REDCap using PyCap."""
     project = Project(REDCAP_API_URL, REDCAP_API_TOKEN)
 
-    # Remove 'redcap_event_name' from fields (it is NOT fetch_redcap_entries
-    fields = [
-        "study_id",
-        "family_id",
-        "youth_dob_y",
-        "t1_date",
-        "demo_sex",
+    if not redcap_fields:
+        logging.error("No field mapping (redcap2wl) provided for REDCap retrieval.")
+        return []
 
-    ]
+    # # Remove 'redcap_event_name' from fields (it is NOT fetch_redcap_entries)
+    # if "redcap_event_name" not in redcap_fields:
+    #     redcap_fields.append("redcap_event_name")
+
+    # Fetch metadata to get valid REDCap field names
+    valid_fields = {field["field_name"] for field in project.export_metadata()}
 
     # Fetch REDCap records (NO export_events argument)
-    records = project.export_records(fields=fields, format_type="json")
+    redcap_fields = [field for field in redcap2wl.keys() if field in valid_fields]
 
-    # Extract `redcap_event_name` from each entry if available
+    if not redcap_fields:
+        logging.error("No valid REDCap fields found in provided mapping.")
+        return []
+
+    logging.info(f"Fetching REDCap data for fields: {redcap_fields}")
+
+    records = project.export_records(fields=redcap_fields, format_type="json")
+
+    # Ensure all requested fields exist in every record (fill missing fields with None)
     for record in records:
         record["redcap_event_name"] = record.get("redcap_event_name", "UNKNOWN_EVENT")
+        for field in redcap_fields:
+            record.setdefault(field, None)  # Fill missing fields with None
 
     if not records:
         logging.warning("No records retrieved from REDCap.")
@@ -68,10 +79,29 @@ def mapping_redcap_event_name_to_ses_id(mri_visit_mapping,redcap_event):
         logging.error(f"Error mapping REDCap event name to SES ID: {e}")
         return None
 
-def sync_redcap_to_db(mri_visit_mapping=None,site_id=None,protocol=None) -> None:
+def sync_redcap_to_db(
+    mri_visit_mapping : dict,
+    site_id : str,
+    protocol : dict,
+    redcap2wl : dict,  # Dictionary mapping REDCap fields to WorklistItem fields
+    ) -> None:
     """Sync REDCap patient data with the worklist database."""
+
+    if not redcap2wl:
+        logging.error("No field mapping (redcap2wl) provided for syncing.")
+
     session = Session()
-    redcap_entries = fetch_redcap_entries()
+
+    # Extract the REDCap fields that need to be pulled
+    default_fields = ["study_id", "family_id", "youth_dob_y", "t1_date", "demo_sex"]
+
+    redcap_fields = list(redcap2wl.keys())
+
+    for i in default_fields:
+        if i not in redcap_fields:
+            redcap_fields.append(i)
+
+    redcap_entries = fetch_redcap_entries(redcap_fields)
 
     for record in redcap_entries:
         study_id = record.get("study_id")
@@ -83,7 +113,7 @@ def sync_redcap_to_db(mri_visit_mapping=None,site_id=None,protocol=None) -> None
         PatientName = f"cpip-id-{study_id}^fa-{family_id}"
         PatientID = f"sub-{study_id}_ses-{ses_id}_fam-{family_id}_site-{site_id}"
 
-        if not study_id:
+        if not PatientID:
             logging.warning("Skipping record due to missing Study ID.")
             continue
 
@@ -100,6 +130,13 @@ def sync_redcap_to_db(mri_visit_mapping=None,site_id=None,protocol=None) -> None
             existing_entry.patient_birth_date = record.get("youth_dob_y", "19000101")
             existing_entry.patient_sex = record.get("demo_sex")
             existing_entry.modality = record.get("modality", "MR")
+
+            # Dynamically update DICOM worklist fields from REDCap
+            for redcap_field, dicom_field in redcap2wl.items():
+                if redcap_field in record:
+                    if dicom_field not in default_fields:
+                        setattr(existing_entry, dicom_field, record[redcap_field])
+
             # existing_entry.scheduled_start_date = record.get("scheduled_date")
             # existing_entry.scheduled_start_time = record.get("scheduled_time")
             # existing_entry.protocol_name = record.get("protocol")
@@ -113,8 +150,8 @@ def sync_redcap_to_db(mri_visit_mapping=None,site_id=None,protocol=None) -> None
             logging.info(f"Adding new worklist entry for PatientID {PatientID}")
             new_entry = WorklistItem(
                 study_instance_uid=generate_instance_uid(),
-                patient_name=record.get("patient_name"),
-                patient_id=record.get("patient_id"),
+                patient_name=PatientName,
+                patient_id=PatientID,
                 patient_birth_date=record.get("youth_dob_y", "19000101"),
                 patient_sex=record.get("demo_sex"),
                 modality=record.get("modality", "MR"),
@@ -122,7 +159,7 @@ def sync_redcap_to_db(mri_visit_mapping=None,site_id=None,protocol=None) -> None
                 # scheduled_start_time=record.get("scheduled_time"),
                 protocol_name=protocol.get(site_id, "DEFAULT_PROTOCOL"),
                 # patient_weight_kg=patient_weight_kg,
-                # patient_weight_lb=patient_weight_lb,
+                patient_weight_lb=record.get("patient_weight_lb", ""),
                 # referring_physician_name=record.get("referring_physician"),
                 # performing_physician=record.get("performing_physician"),
                 study_description=record.get("study_description", "CPIP"),

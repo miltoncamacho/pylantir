@@ -20,7 +20,7 @@ class WorklistItem(Base):
     patient_id = Column(String(50))
     patient_birth_date = Column(String(8))  # YYYYMMDD
     patient_sex = Column(String(1))         # 'M'/'F' or other
-    patient_weight = Column(String(10), default=100)
+    patient_weight_lb = Column(String(10), default=100)
     accession_number = Column(String(50))
 
     # Modality worklist attributes

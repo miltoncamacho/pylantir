@@ -1,5 +1,5 @@
-from py_mwl.db_setup import Session
-from py_mwl.models import WorklistItem
+from pylantir.db_setup import Session
+from pylantir.models import WorklistItem
 
 # Define the target StudyInstanceUID or PatientID
 target_study_uid = "1.2.3.4.5.6.7.8.3"
@@ -22,7 +22,7 @@ if results:
         print("------------------------------------------------")
         print(f"Patient Name: {entry.patient_name}")
         print(f"Patient ID: {entry.patient_id}")
-        print(f"Patient Weight: {entry.patient_weight}")
+        print(f"Patient Weight: {entry.patient_weight_lb}")
         print(f"Study Instance UID: {entry.study_instance_uid}")
         print(f"Accession Number: {entry.accession_number}")
         print(f"Modality: {entry.modality}")
@@ -34,7 +34,7 @@ if results:
         print(f"Procedure Description: {entry.procedure_description}")
         print(f"Protocol Name: {entry.protocol_name}")
         print(f"Station Name: {entry.station_name}")
-        print(f"Procedure Step Status: {entry.status}")
+        print(f"Procedure Step Status: {entry.performed_procedure_step_status}")
         print("------------------------------------------------")
 else:
     print("No matching worklist entries found.")
