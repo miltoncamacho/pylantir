@@ -52,8 +52,8 @@ def row_to_mwl_dataset(row: WorklistItem) -> Dataset:
         ds.PatientSex = row.patient_sex
     if row.study_instance_uid:
         ds.StudyInstanceUID = row.study_instance_uid
-    if row.patient_weight:
-        ds.PatientWeight = row.patient_weight or "100"
+    if row.patient_weight_lb:
+        ds.PatientWeight = row.patient_weight_lb or "100"
     if row.study_description:
         ds.StudyDescription = row.study_description
 
@@ -63,7 +63,7 @@ def row_to_mwl_dataset(row: WorklistItem) -> Dataset:
 
     # Scheduled Procedure Step Sequence
     sps = Dataset()
-    sps.Modality = row.modality or "OT"
+    sps.Modality = row.modality or "MR"
     sps.ScheduledStationAETitle = row.scheduled_station_aetitle or ""
     sps.ScheduledProcedureStepStartDate = row.scheduled_start_date or ""
     sps.ScheduledProcedureStepStartTime = row.scheduled_start_time or ""
@@ -71,7 +71,8 @@ def row_to_mwl_dataset(row: WorklistItem) -> Dataset:
     sps.ScheduledProcedureStepDescription = row.procedure_description or "DEFAULT_PROCEDURE"
     sps.ScheduledStationName = row.station_name or ""
 
-    # NEW: Adding Local Protocol to Scheduled Protocol Code Sequence. This populates the recomended protocol name in the MWL.
+    # Adding Local Protocol to Scheduled Protocol Code Sequence. This populates the recomended protocol name in the MWL.
+    # TODO: improve the protocol name handling
     if row.protocol_name:
         protocol_seq = Dataset()
         protocol_seq.CodeValue = row.protocol_name[:16]  # Trim long names

@@ -7,11 +7,12 @@ import json
 import importlib.resources as pkg_resources
 import pathlib as Path
 import coloredlogs
+import sys
+import importlib.util
 
 from ..mwl_server import run_mwl_server
 from ..redcap_to_db import sync_redcap_to_db
 
-#TODO add tests
 
 DEBUG = bool(os.environ.get("DEBUG", False))
 coloredlogs.install()
@@ -40,9 +41,11 @@ def parse_args():
                     help="""
                         Command to run:
                         - start: start the MWL server
-                        - test: run tests for MWL and MPPS (TODO: comming later)
+                        - test-client: run tests for MWL
+                        - test-mpps: run tests for MPPS
                     """,
-                    choices=["start", "test"])
+                    choices=["start", "test-client", "test-mpps"],
+                    )
     p.add_argument("--AEtitle", help="AE Title for the server")
     p.add_argument("--ip", help="IP/host address for the server", default="0.0.0.0")
     p.add_argument("--port", type=int, help="port for the server", default=4242)
@@ -62,21 +65,14 @@ def parse_args():
     )
 
     p.add_argument(
-        "--create-mpps",
-        action="store_true",
-        default=False,
-        help="Create a MPPS instance and send in progress status",
+        "--mpps_action",
+        choices=["create", "set"],
+        default=None,
+        help="Action to perform for MPPS either create or set",
     )
 
     p.add_argument(
-        "--set-mpps",
-        action="store_true",
-        default=False,
-        help="Set the status to completed or discontinued",
-    )
-
-    p.add_argument(
-        "--status",
+        "--mpps_status",
         default=None,
         type=str,
         choices=["COMPLETED", "DISCONTINUED"],
@@ -84,14 +80,21 @@ def parse_args():
     )
 
     p.add_argument(
-        "--study-uid",
+        "--callingAEtitle",
+        default=None,
+        type=str,
+        help="Calling AE Title for MPPS it helps when the MWL is limited to only accept certain AE titles",
+    )
+
+    p.add_argument(
+        "--study_uid",
         default=None,
         type=str,
         help="StudyInstanceUID to test MPPS",
     )
 
     p.add_argument(
-        "--sop-uid",
+        "--sop_uid",
         default=None,
         type=str,
         help="SOPInstanceUID to test MPPS",
@@ -109,14 +112,12 @@ def load_config(config_path=None):
     Returns:
         dict: Parsed JSON config as a dictionary.
     """
-    # If no custom config is provided, use the default package config
     if config_path is None:
         config_path = pkg_resources.files("pylantir").joinpath("config/mwl_config.json")
 
     config_path = Path.Path(config_path)  # Ensure it's a Path object
 
     try:
-        # Load configuration file
         with config_path.open("r") as f:
             config_data = json.load(f)
         lgr.info(f"Loaded configuration from {config_path}")
@@ -129,6 +130,32 @@ def load_config(config_path=None):
     except json.JSONDecodeError:
         lgr.error(f"Invalid JSON format in '{config_path}'.")
         return {}
+
+def run_test_script(script_name, **kwargs):
+    """
+    Dynamically load and run a test script with optional arguments.
+
+    Args:
+        script_name (str): The name of the script inside the tests directory.
+        kwargs: Arguments to pass to the test script.
+    """
+    root_dir = Path.Path(__file__).parent.parent.parent.parent  # Locate the project root
+    test_dir = root_dir / "tests"
+    script_path = test_dir / script_name
+
+    if not script_path.exists():
+        lgr.warning(f"Test script not found: {script_path}")
+        return
+
+    spec = importlib.util.spec_from_file_location(script_name, str(script_path))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[script_name] = module
+    spec.loader.exec_module(module)
+
+    if hasattr(module, "main"):
+        module.main(**kwargs)  # Pass keyword arguments to the test script
+    else:
+        lgr.error(f"Test script {script_name} does not have a 'main' function.")
 
 
 def main() -> None:
@@ -152,13 +179,13 @@ def main() -> None:
     # EXtract protocol mapping
     protocol = config.get("protocol", {})
 
-    if args.command == "start":
-
-        sync_redcap_to_db(mri_visit_mapping=mri_visit_session_mapping,
-                    site_id=site,
-                    protocol=protocol,
-                    redcap2wl=redcap2wl,
-                    ) #TODO: add filters to participant registration dicom fields not to populate in the worklist through the config not to populate
+    if (args.command == "start"):
+        sync_redcap_to_db(
+            mri_visit_mapping=mri_visit_session_mapping,
+            site_id=site,
+            protocol=protocol,
+            redcap2wl=redcap2wl,
+        )
 
         run_mwl_server(
             host=args.ip,
@@ -167,8 +194,33 @@ def main() -> None:
             allowed_aets=allowed_aet,
         )
 
-    if args.command == "test":
-        lgr.info("Running tests for MWL and MPPS will be available soon.")
+    if (args.command == "test-client"):
+        lgr.info("Running client test for MWL")
+
+        # Run client.py to ensure that the worklist server is running and accepting connections
+        run_test_script(
+        "client.py",
+        ip=args.ip,
+        port=args.port,
+        AEtitle=args.AEtitle,
+        )
+
+    if (args.command == "test-mpps"):
+        lgr.info("Running MPPS test")
+                # Run MPPS tester with relevant arguments
+
+        run_test_script(
+            "mpps_tester.py",
+            host=args.ip,
+            port=args.port,
+            calling_aet=args.callingAEtitle,
+            called_aet=args.AEtitle,
+            action=args.mpps_action,
+            status=args.mpps_status,
+            study_uid=args.study_uid,
+            sop_instance_uid=args.sop_uid,
+        )
+
 
 if __name__ == "__main__":
     main()

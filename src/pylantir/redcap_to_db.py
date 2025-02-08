@@ -152,7 +152,7 @@ def sync_redcap_to_db(
                 study_instance_uid=generate_instance_uid(),
                 patient_name=PatientName,
                 patient_id=PatientID,
-                patient_birth_date=record.get("youth_dob_y", "19000101"),
+                patient_birth_date=f"{record.get('youth_dob_y', '2012')}0101",
                 patient_sex=record.get("demo_sex"),
                 modality=record.get("modality", "MR"),
                 # scheduled_start_date=record.get("scheduled_date"),

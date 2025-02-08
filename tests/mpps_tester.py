@@ -3,21 +3,10 @@
     Author: Milton Camacho
     Date: 2025-01-30
     This script is designed to test the Modality Performed Procedure Step (MPPS) functionality by simulating a modality device that sends N-CREATE and N-SET requests to a Modality Worklist (MWL) server.
+
     The script provides two main actions:
     1. N-CREATE: To notify the MWL server that a procedure has started.
     2. N-SET: To update the status of an existing MPPS entry.
-    Arguments:
-    action: The action to perform, either 'create' or 'set'.
-    host: The IP address of the MWL server (default: localhost).
-    port: The port number of the MWL server (default: 11112).
-    calling_aet: The AE Title of the client (default: TEST_AET).
-    called_aet: The AE Title of the target server (default: MWL_SERVER).
-    study_uid: The StudyInstanceUID to track.
-    status: The final status for N-SET (required for 'set' action).
-    sop_instance_uid: The SOPInstanceUID of the MPPS entry to update (required for 'set' action).
-    Returns:
-    For 'create' action, it returns the generated SOPInstanceUID for later use in N-SET.
-    In order to test the MPPS functionality, we need to simulate a modality device that sends N-CREATE and N-SET requests to the MWL server.
 
     Example usage:
 
@@ -38,23 +27,25 @@ from pynetdicom.sop_class import ModalityPerformedProcedureStep
 # Enable debug logging
 debug_logger()
 
-
 def generate_sop_instance_uid():
     """Generate a valid Affected SOP Instance UID."""
     return f"1.2.840.10008.3.1.2.3.4.{uuid.uuid4().int}"
 
-
-def create_mpps(host, port, calling_aet, called_aet, study_uid):
+def create_mpps(host="localhost", port=11112, calling_aet="TEST_AET", called_aet="MWL_SERVER", study_uid=None):
     """
     Sends an N-CREATE request to notify the MWL server that a procedure has started.
     """
+    if study_uid is None:
+        print("[ERROR] Missing required parameter: study_uid")
+        return None
+
     ae = AE(ae_title=calling_aet)
     ae.add_requested_context(ModalityPerformedProcedureStep)
 
     assoc = ae.associate(host, port, ae_title=called_aet)
     if not assoc.is_established:
         print("[ERROR] Association failed!")
-        return
+        return None
 
     # Generate a unique Affected SOP Instance UID
     sop_instance_uid = generate_sop_instance_uid()
@@ -79,21 +70,27 @@ def create_mpps(host, port, calling_aet, called_aet, study_uid):
 
     return sop_instance_uid  # Return SOPInstanceUID for later use in N-SET
 
-
-def update_mpps(host, port, calling_aet, called_aet, study_uid, status, sop_instance_uid):
+def update_mpps(host="localhost", port=11112, calling_aet="TEST_AET", called_aet="MWL_SERVER",
+                study_uid=None, status=None, sop_instance_uid=None):
     """
     Sends an N-SET request to update the status of an existing MPPS entry.
     """
+    if study_uid is None:
+        print("[ERROR] Missing required parameter: study_uid")
+        return
+    if status is None:
+        print("[ERROR] Missing required parameter: status")
+        return
+    if sop_instance_uid is None:
+        print("[ERROR] Missing required parameter: sop_instance_uid")
+        return
+
     ae = AE(ae_title=calling_aet)
     ae.add_requested_context(ModalityPerformedProcedureStep)
 
     assoc = ae.associate(host, port, ae_title=called_aet)
     if not assoc.is_established:
         print("[ERROR] Association failed!")
-        return
-
-    if not sop_instance_uid:
-        print("[ERROR] No SOPInstanceUID provided for N-SET.")
         return
 
     # Prepare N-SET Dataset
@@ -111,6 +108,18 @@ def update_mpps(host, port, calling_aet, called_aet, study_uid, status, sop_inst
 
     assoc.release()
 
+def main(action=None, host="localhost", port=11112, calling_aet="TEST_AET", called_aet="MWL_SERVER",
+         study_uid=None, status=None, sop_instance_uid=None):
+    """
+    Main function to handle MPPS actions.
+    """
+    if action == "create":
+        sop_instance_uid = create_mpps(host, port, calling_aet, called_aet, study_uid)
+        if sop_instance_uid:
+            print(f"💡 Save this SOPInstanceUID for N-SET: {sop_instance_uid}")
+
+    elif action == "set":
+        update_mpps(host, port, calling_aet, called_aet, study_uid, status, sop_instance_uid)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MPPS Tester Script")
@@ -126,15 +135,13 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.action == "create":
-        sop_instance_uid = create_mpps(args.host, args.port, args.calling_aet, args.called_aet, args.study_uid)
-        if sop_instance_uid:
-            print(f"💡 Save this SOPInstanceUID for N-SET: {sop_instance_uid}")
-
-    elif args.action == "set":
-        if not args.status:
-            print("[ERROR] You must provide --status when using the 'set' action.")
-        if not args.sop_instance_uid:
-            print("[ERROR] You must provide --sop_instance_uid when using the 'set' action.")
-        else:
-            update_mpps(args.host, args.port, args.calling_aet, args.called_aet, args.study_uid, args.status, args.sop_instance_uid)
+    main(
+        action=args.action,
+        host=args.host,
+        port=args.port,
+        calling_aet=args.calling_aet,
+        called_aet=args.called_aet,
+        study_uid=args.study_uid,
+        status=args.status,
+        sop_instance_uid=args.sop_instance_uid
+    )
