@@ -40,5 +40,5 @@ def main():
     else:
         print("No matching worklist entries found.")
 
-if --name-- == "--main--":
+if __name__ == "__main__":
     main()
