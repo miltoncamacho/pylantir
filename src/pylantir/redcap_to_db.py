@@ -6,6 +6,27 @@ from sqlalchemy.orm import sessionmaker
 from .db_setup import engine
 from .models import WorklistItem
 
+# Default logging mode
+logging.basicConfig(level=logging.INFO)
+
+DEBUG = bool(os.environ.get("DEBUG", False))
+
+if DEBUG:
+    logging.basicConfig(level=logging.DEBUG)
+    logging.root.setLevel(logging.DEBUG)
+    root_handler = logging.root.handlers[0]
+    root_handler.setFormatter(
+        logging.Formatter("%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s")
+    )
+else:
+    root_handler = logging.root.handlers[0]
+    root_handler.setFormatter(
+        logging.Formatter("%(levelname)-8s %(message)s")
+    )
+    logging.root.setLevel(logging.INFO)
+
+lgr = logging.getLogger(__name__)
+
 # REDCap API Config
 REDCAP_API_URL = os.getenv("REDCAP_API_URL", "https://test-redcap.urca.ca/api/")
 REDCAP_API_TOKEN = os.getenv("REDCAP_API_TOKEN", "TOKEN")
@@ -18,7 +39,7 @@ def fetch_redcap_entries(redcap_fields : list) -> list:
     project = Project(REDCAP_API_URL, REDCAP_API_TOKEN)
 
     if not redcap_fields:
-        logging.error("No field mapping (redcap2wl) provided for REDCap retrieval.")
+        lgr.error("No field mapping (redcap2wl) provided for REDCap retrieval.")
         return []
 
     # # Remove 'redcap_event_name' from fields (it is NOT fetch_redcap_entries)
@@ -32,10 +53,10 @@ def fetch_redcap_entries(redcap_fields : list) -> list:
     redcap_fields = [field for field in redcap_fields if field in valid_fields]
 
     if not redcap_fields:
-        logging.error("No valid REDCap fields found in provided mapping.")
+        lgr.error("No valid REDCap fields found in provided mapping.")
         return []
 
-    logging.info(f"Fetching REDCap data for fields: {redcap_fields}")
+    lgr.info(f"Fetching REDCap data for fields: {redcap_fields}")
 
     records = project.export_records(fields=redcap_fields, format_type="json")
 
@@ -46,7 +67,7 @@ def fetch_redcap_entries(redcap_fields : list) -> list:
             record.setdefault(field, None)  # Fill missing fields with None
 
     if not records:
-        logging.warning("No records retrieved from REDCap.")
+        lgr.warning("No records retrieved from REDCap.")
 
     return records
 
@@ -76,7 +97,7 @@ def mapping_redcap_event_name_to_ses_id(mri_visit_mapping,redcap_event):
             raise ValueError(f"SES ID not found for REDCap event: {redcap_event}")
         return ses_id
     except Exception as e:
-        logging.error(f"Error mapping REDCap event name to SES ID: {e}")
+        lgr.error(f"Error mapping REDCap event name to SES ID: {e}")
         return None
 
 def sync_redcap_to_db(
@@ -88,7 +109,7 @@ def sync_redcap_to_db(
     """Sync REDCap patient data with the worklist database."""
 
     if not redcap2wl:
-        logging.error("No field mapping (redcap2wl) provided for syncing.")
+        lgr.error("No field mapping (redcap2wl) provided for syncing.")
 
     session = Session()
 
@@ -114,7 +135,7 @@ def sync_redcap_to_db(
         PatientID = f"sub-{study_id}_ses-{ses_id}_fam-{family_id}_site-{site_id}"
 
         if not PatientID:
-            logging.warning("Skipping record due to missing Study ID.")
+            lgr.warning("Skipping record due to missing Study ID.")
             continue
 
         patient_weight_kg, patient_weight_lb = convert_weight(
@@ -124,7 +145,7 @@ def sync_redcap_to_db(
         existing_entry = session.query(WorklistItem).filter_by(patient_id=PatientID).first()
 
         if existing_entry:
-            logging.info(f"Updating existing worklist entry for PatientID {PatientID}")
+            logging.debug(f"Updating existing worklist entry for PatientID {PatientID}")
             existing_entry.patient_name = PatientName
             existing_entry.patient_id = PatientID
             existing_entry.patient_birth_date = record.get("youth_dob_y", "19000101")
@@ -147,7 +168,7 @@ def sync_redcap_to_db(
             # existing_entry.study_description = record.get("study_description")
             # existing_entry.station_name = record.get("station_name")
         else:
-            logging.info(f"Adding new worklist entry for PatientID {PatientID}")
+            logging.debug(f"Adding new worklist entry for PatientID {PatientID}")
             new_entry = WorklistItem(
                 study_instance_uid=generate_instance_uid(),
                 patient_name=PatientName,
@@ -174,5 +195,4 @@ def sync_redcap_to_db(
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     sync_redcap_to_db(mri_visit_mapping=None,site_id=None,protocol=None, redcap2wl=None)

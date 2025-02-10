@@ -2,14 +2,16 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from .models import Base
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def get_engine(db_path="worklist.db", echo=False):
     """
-    Create a SQLAlchemy engine for an encrypted SQLite database.
+    Create a SQLAlchemy engine for an SQLite database.
 
     Args:
         db_path (str): The file path for the SQLite database.
-        password (str): The encryption key for the database.
         echo (bool): If True, SQLAlchemy will log all SQL queries.
 
     Returns:

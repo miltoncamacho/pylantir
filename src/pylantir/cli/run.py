@@ -9,6 +9,7 @@ import pathlib as Path
 import coloredlogs
 import sys
 import importlib.util
+from dotenv import set_key
 
 from ..mwl_server import run_mwl_server
 from ..redcap_to_db import sync_redcap_to_db
@@ -41,10 +42,11 @@ def parse_args():
                     help="""
                         Command to run:
                         - start: start the MWL server
+                        - query: query the MWL db
                         - test-client: run tests for MWL
                         - test-mpps: run tests for MPPS
                     """,
-                    choices=["start", "test-client", "test-mpps"],
+                    choices=["start", "query-db", "test-client", "test-mpps"],
                     )
     p.add_argument("--AEtitle", help="AE Title for the server")
     p.add_argument("--ip", help="IP/host address for the server", default="0.0.0.0")
@@ -157,29 +159,54 @@ def run_test_script(script_name, **kwargs):
     else:
         lgr.error(f"Test script {script_name} does not have a 'main' function.")
 
+def update_env_with_config(db_path="~/Desktop/worklist.db", env_path=".env"):
+    """
+    Updates db_path from the config to DB_PATH in .env.
+    """
+
+    # Expand the db_path from the config
+    try:
+        db_path_expanded = os.path.expanduser(db_path)
+    except AttributeError:
+        lgr.error("Invalid db_path in config.")
+        return
+
+    # Set the default env_path to the src/pylantir folder
+    dot_env_path = pkg_resources.files("pylantir").joinpath(env_path)
+    dot_env_path = Path.Path(dot_env_path)
+
+    # Write to .env using python-dotenv's set_key
+    set_key(dot_env_path, "DB_PATH", db_path_expanded)
+
+    print(f"DB_PATH set to {db_path_expanded} in {dot_env_path}")
 
 def main() -> None:
     args = parse_args()
 
-    # Load configuration (either user-specified or default)
-    config = load_config(args.pylantir_config)
-
-    # Extract allowed AE Titles (default to empty list if missing)
-    allowed_aet = config.get("allowed_aet", [])
-
-    # Extract mri_visit_session_mapping (default to empty list if missing)
-    mri_visit_session_mapping = config.get("mri_visit_session_mapping", {})
-
-    # Extract the site id
-    site = config.get("site", None)
-
-    # Extract the redcap to worklist mapping
-    redcap2wl = config.get("redcap2wl", {})
-
-    # EXtract protocol mapping
-    protocol = config.get("protocol", {})
-
     if (args.command == "start"):
+        # Load configuration (either user-specified or default)
+        config = load_config(args.pylantir_config)
+
+        # Extract the database path (default to worklist.db if missing)
+        db_path = config.get("db_path", "./worklist.db")
+        update_env_with_config(db_path=db_path)
+
+        # Extract allowed AE Titles (default to empty list if missing)
+        allowed_aet = config.get("allowed_aet", [])
+
+        # Extract mri_visit_session_mapping (default to empty list if missing)
+        mri_visit_session_mapping = config.get("mri_visit_session_mapping", {})
+
+        # Extract the site id
+        site = config.get("site", None)
+
+        # Extract the redcap to worklist mapping
+        redcap2wl = config.get("redcap2wl", {})
+
+        # EXtract protocol mapping
+
+        protocol = config.get("protocol", {})
+
         sync_redcap_to_db(
             mri_visit_mapping=mri_visit_session_mapping,
             site_id=site,
@@ -194,6 +221,12 @@ def main() -> None:
             allowed_aets=allowed_aet,
         )
 
+    if (args.command == "query-db"):
+        lgr.info("Querying the MWL database")
+
+        run_test_script(
+            "query_db.py")
+
     if (args.command == "test-client"):
         lgr.info("Running client test for MWL")
 
@@ -207,7 +240,7 @@ def main() -> None:
 
     if (args.command == "test-mpps"):
         lgr.info("Running MPPS test")
-                # Run MPPS tester with relevant arguments
+        # Run MPPS tester with relevant arguments
 
         run_test_script(
             "mpps_tester.py",

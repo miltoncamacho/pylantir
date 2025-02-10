@@ -14,6 +14,7 @@
     - MPPS N-SET: Handles updates to an existing procedure step, updating the database status to "COMPLETED" or "DISCONTINUED" as appropriate.
 """
 
+import os
 import logging
 from pydicom.dataset import Dataset
 from pynetdicom import AE, evt
@@ -34,7 +35,27 @@ from .models import WorklistItem
 # Allowed Calling AE Titles (Unrestricted for now)
 ACCEPTED_CALLING_AETS = []
 
-debug_logger()
+# Default logging mode
+logging.basicConfig(level=logging.INFO)
+
+DEBUG = bool(os.environ.get("DEBUG", False))
+
+if DEBUG:
+    debug_logger()
+    logging.basicConfig(level=logging.DEBUG)
+    logging.root.setLevel(logging.DEBUG)
+    root_handler = logging.root.handlers[0]
+    root_handler.setFormatter(
+        logging.Formatter("%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s")
+    )
+else:
+    root_handler = logging.root.handlers[0]
+    root_handler.setFormatter(
+        logging.Formatter("%(levelname)-8s %(message)s")
+    )
+    logging.root.setLevel(logging.INFO)
+
+lgr = logging.getLogger(__name__)
 
 # Track MPPS instances in memory (for reference)
 managed_instances = {}
@@ -232,5 +253,4 @@ def run_mwl_server(host="0.0.0.0", port=4242, aetitle="MWL_SERVER", allowed_aets
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     run_mwl_server()
