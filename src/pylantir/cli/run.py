@@ -10,29 +10,29 @@ import coloredlogs
 import sys
 import importlib.util
 from dotenv import set_key
+from concurrent.futures import ThreadPoolExecutor  # for background thread
 
 from ..mwl_server import run_mwl_server
-from ..redcap_to_db import sync_redcap_to_db
-
-
-DEBUG = bool(os.environ.get("DEBUG", False))
-coloredlogs.install()
-
-if DEBUG:
-    logging.basicConfig(level=logging.DEBUG)
-    logging.root.setLevel(logging.DEBUG)
-    root_handler = logging.root.handlers[0]
-    root_handler.setFormatter(
-        logging.Formatter("%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s")
-    )
-else:
-    root_handler = logging.root.handlers[0]
-    root_handler.setFormatter(
-        logging.Formatter("%(levelname)-8s %(message)s")
-    )
-    logging.root.setLevel(logging.INFO)
+from ..redcap_to_db import sync_redcap_to_db_repeatedly
 
 lgr = logging.getLogger(__name__)
+
+def setup_logging(debug=False):
+
+    # Set the base level to DEBUG or INFO
+    level = logging.DEBUG if debug else logging.INFO
+    coloredlogs.install(level=level)
+    logging.getLogger("pynetdicom").setLevel(logging.INFO)
+    # Then forcibly suppress SQLAlchemy logs:
+    logging.getLogger("sqlalchemy").handlers = [logging.NullHandler()]
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.ERROR)
+    logging.getLogger("sqlalchemy.pool").setLevel(logging.ERROR)
+    logging.getLogger("sqlalchemy.orm").setLevel(logging.ERROR)
+    logging.getLogger("sqlalchemy.dialects").setLevel(logging.ERROR)
+    logging.getLogger("sqlalchemy.engine.Engine").setLevel(logging.ERROR)
+    logging.getLogger("sqlalchemy.engine.Engine").handlers = [logging.NullHandler()]
+    # or completely disable them:
+    logging.getLogger("sqlalchemy.engine.Engine").disabled = True
 
 def parse_args():
     default_config_path = str(pkg_resources.files("pylantir").joinpath("config/mwl_config.json"))
@@ -159,7 +159,7 @@ def run_test_script(script_name, **kwargs):
     else:
         lgr.error(f"Test script {script_name} does not have a 'main' function.")
 
-def update_env_with_config(db_path="~/Desktop/worklist.db", env_path=".env"):
+def update_env_with_config(db_path="~/Desktop/worklist.db", db_echo="False", env_path=".env"):
     """
     Updates db_path from the config to DB_PATH in .env.
     """
@@ -177,19 +177,36 @@ def update_env_with_config(db_path="~/Desktop/worklist.db", env_path=".env"):
 
     # Write to .env using python-dotenv's set_key
     set_key(dot_env_path, "DB_PATH", db_path_expanded)
+    set_key(dot_env_path, "DB_ECHO", db_echo)
 
-    print(f"DB_PATH set to {db_path_expanded} in {dot_env_path}")
+    lgr.debug(f"DB_PATH set to {db_path_expanded} and DB_ECHO to {db_echo} in {dot_env_path}")
 
 def main() -> None:
     args = parse_args()
+
+    DEBUG = bool(os.environ.get("DEBUG", False))
+
+    # Make sure to call this ONCE, before any SQLAlchemy imports that log
+    setup_logging(debug=DEBUG)
+
+    print("root logger level:", logging.getLogger().getEffectiveLevel())
+    print("sqlalchemy logger level:", logging.getLogger("sqlalchemy").getEffectiveLevel())
+    print("mwl_server logger level:", logging.getLogger("pylantir.mwl_server").getEffectiveLevel())
+    print("pynetdicom logger level:", logging.getLogger("pynetdicom").getEffectiveLevel())
+
 
     if (args.command == "start"):
         # Load configuration (either user-specified or default)
         config = load_config(args.pylantir_config)
 
-        # Extract the database path (default to worklist.db if missing)
+        # Extract the database path (default to worklist.db if missing) &
+        # Extract the database echo setting (default to False if missing)
         db_path = config.get("db_path", "./worklist.db")
-        update_env_with_config(db_path=db_path)
+        db_echo = config.get("db_echo", "False")
+        update_env_with_config(db_path=db_path, db_echo=db_echo)
+
+        # Extract the database update interval (default to 60 seconds if missing)
+        db_update_interval = config.get("db_update_interval", 60)
 
         # Extract allowed AE Titles (default to empty list if missing)
         allowed_aet = config.get("allowed_aet", [])
@@ -207,19 +224,30 @@ def main() -> None:
 
         protocol = config.get("protocol", {})
 
-        sync_redcap_to_db(
-            mri_visit_mapping=mri_visit_session_mapping,
-            site_id=site,
-            protocol=protocol,
-            redcap2wl=redcap2wl,
-        )
+        # Create and update the MWL database
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future = executor.submit(
+                sync_redcap_to_db_repeatedly,
+                mri_visit_mapping=mri_visit_session_mapping,
+                site_id=site,
+                protocol=protocol,
+                redcap2wl=redcap2wl,
+                interval=db_update_interval,
+            )
 
-        run_mwl_server(
-            host=args.ip,
-            port=args.port,
-            aetitle=args.AEtitle,
-            allowed_aets=allowed_aet,
-        )
+                # sync_redcap_to_db(
+                #     mri_visit_mapping=mri_visit_session_mapping,
+                #     site_id=site,
+                #     protocol=protocol,
+                #     redcap2wl=redcap2wl,
+                # )
+
+            run_mwl_server(
+                host=args.ip,
+                port=args.port,
+                aetitle=args.AEtitle,
+                allowed_aets=allowed_aet,
+            )
 
     if (args.command == "query-db"):
         lgr.info("Querying the MWL database")
