@@ -1,6 +1,9 @@
-![Pylantir](pylantir.png)
-
-# Pylantir
+<div style="text-align: center;">
+    <h1>Pylantir</h1>
+</div>
+<div style="text-align: center;">
+    <img src="pylantir.png" alt="Pylantir" width="50%">
+</div>
 
 This project's goal is to significantly reduce the number of human-related errors when manualy registering participants for medical imaging procedures.
 
