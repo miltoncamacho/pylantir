@@ -7,8 +7,11 @@
 """
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import Column, Integer, String
+import logging
 
 Base = declarative_base()
+
+lgr = logging.getLogger(__name__)
 
 class WorklistItem(Base):
     __tablename__ = 'worklist_items'

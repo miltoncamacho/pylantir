@@ -1,8 +1,11 @@
 import os
+import logging
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from .models import Base
 from dotenv import load_dotenv
+
+lgr = logging.getLogger(__name__)
 
 load_dotenv()
 

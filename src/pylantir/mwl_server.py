@@ -35,26 +35,6 @@ from .models import WorklistItem
 # Allowed Calling AE Titles (Unrestricted for now)
 ACCEPTED_CALLING_AETS = []
 
-# Default logging mode
-logging.basicConfig(level=logging.INFO)
-
-DEBUG = bool(os.environ.get("DEBUG", False))
-
-if DEBUG:
-    debug_logger()
-    logging.basicConfig(level=logging.DEBUG)
-    logging.root.setLevel(logging.DEBUG)
-    root_handler = logging.root.handlers[0]
-    root_handler.setFormatter(
-        logging.Formatter("%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s")
-    )
-else:
-    root_handler = logging.root.handlers[0]
-    root_handler.setFormatter(
-        logging.Formatter("%(levelname)-8s %(message)s")
-    )
-    logging.root.setLevel(logging.INFO)
-
 lgr = logging.getLogger(__name__)
 
 # Track MPPS instances in memory (for reference)
@@ -111,7 +91,7 @@ def row_to_mwl_dataset(row: WorklistItem) -> Dataset:
 def handle_mwl_find(event):
     """Handle MWL C-FIND: query the DB and return matching items."""
     query_ds = event.identifier
-    logging.info(f"Received MWL C-FIND query: {query_ds}")
+    lgr.info(f"Received MWL C-FIND query: {query_ds}")
 
     session = Session()
     query = session.query(WorklistItem)
@@ -129,7 +109,7 @@ def handle_mwl_find(event):
     results = query.all()
     session.close()
 
-    logging.info(f"Found {len(results)} matching worklist entries.")
+    lgr.info(f"Found {len(results)} matching worklist entries.")
 
     for row in results:
         ds = row_to_mwl_dataset(row)
@@ -146,21 +126,21 @@ def handle_mpps_n_create(event):
     req = event.request
 
     if req.AffectedSOPInstanceUID is None:
-        logging.error("MPPS N-CREATE failed: Missing Affected SOP Instance UID")
+        lgr.error("MPPS N-CREATE failed: Missing Affected SOP Instance UID")
         return 0x0106, None  # Invalid Attribute Value
 
     # Prevent duplicate MPPS instances
     if req.AffectedSOPInstanceUID in managed_instances:
-        logging.error("MPPS N-CREATE failed: Duplicate SOP Instance UID")
+        lgr.error("MPPS N-CREATE failed: Duplicate SOP Instance UID")
         return 0x0111, None  # Duplicate SOP Instance
 
     attr_list = event.attribute_list
 
     if "PerformedProcedureStepStatus" not in attr_list:
-        logging.error("MPPS N-CREATE failed: Missing PerformedProcedureStepStatus")
+        lgr.error("MPPS N-CREATE failed: Missing PerformedProcedureStepStatus")
         return 0x0120, None  # Missing Attribute
     if attr_list.PerformedProcedureStepStatus.upper() != "IN PROGRESS":
-        logging.error("MPPS N-CREATE failed: Invalid PerformedProcedureStepStatus")
+        lgr.error("MPPS N-CREATE failed: Invalid PerformedProcedureStepStatus")
         return 0x0106, None  # Invalid Attribute Value
 
     ds = Dataset()
@@ -181,10 +161,10 @@ def handle_mpps_n_create(event):
         if entry:
             entry.performed_procedure_step_status = "IN_PROGRESS"
             session.commit()
-            logging.info(f"DB updated: StudyInstanceUID {study_uid} set to IN_PROGRESS")
+            lgr.info(f"DB updated: StudyInstanceUID {study_uid} set to IN_PROGRESS")
     session.close()
 
-    logging.info(f"MPPS N-CREATE success: {ds.SOPInstanceUID} set to IN PROGRESS")
+    lgr.info(f"MPPS N-CREATE success: {ds.SOPInstanceUID} set to IN PROGRESS")
 
     return 0x0000, ds  # Success
 
@@ -193,7 +173,7 @@ def handle_mpps_n_set(event):
     """Handles N-SET for MPPS (Procedure Completion)."""
     req = event.request
     if req.RequestedSOPInstanceUID not in managed_instances:
-        logging.error("MPPS N-SET failed: SOP Instance not recognized")
+        lgr.error("MPPS N-SET failed: SOP Instance not recognized")
         return 0x0112, None  # No Such Object Instance
 
     ds = managed_instances[req.RequestedSOPInstanceUID]
@@ -214,14 +194,14 @@ def handle_mpps_n_set(event):
             if new_status.upper() == "COMPLETED":
                 entry.performed_procedure_step_status = "COMPLETED"
                 session.commit()
-                logging.info(f"DB updated: StudyInstanceUID {study_uid} set to COMPLETED")
+                lgr.info(f"DB updated: StudyInstanceUID {study_uid} set to COMPLETED")
             elif new_status.upper() == "DISCONTINUED":
                 entry.performed_procedure_step_status = "DISCONTINUED"
                 session.commit()
-                logging.info(f"DB updated: StudyInstanceUID {study_uid} set to DISCONTINUED")
+                lgr.info(f"DB updated: StudyInstanceUID {study_uid} set to DISCONTINUED")
     session.close()
 
-    logging.info(f"MPPS N-SET success: {req.RequestedSOPInstanceUID} updated to {new_status}")
+    lgr.info(f"MPPS N-SET success: {req.RequestedSOPInstanceUID} updated to {new_status}")
 
     return 0x0000, ds  # Success
 
@@ -248,7 +228,7 @@ def run_mwl_server(host="0.0.0.0", port=4242, aetitle="MWL_SERVER", allowed_aets
         (evt.EVT_N_SET, handle_mpps_n_set),
     ]
 
-    logging.info(f"Starting MWL+MPPS SCP on {host}:{port} ...")
+    lgr.info(f"Starting MWL+MPPS SCP on {host}:{port} ...")
     ae.start_server((host, port), block=True, evt_handlers=handlers)
 
 
