@@ -95,7 +95,9 @@ As a default pylantir will try to read a JSON structured file with the following
 
 ```json
 {
-  "db_path": "path/to/worklist/worklist.db",
+  "db_path": "/path/to/worklist.db",
+  "db_echo": "False",
+  "db_update_interval": 60,
   "allowed_aet": [],
   "mri_visit_session_mapping": {
     "t1_arm_1": "1",
@@ -122,3 +124,7 @@ As a default pylantir will try to read a JSON structured file with the following
   }
 }
 ```
+
+## Clean Stop of the MWL and Database Sync
+
+To cleanly stop the MWL server and ensure the database syncronization properly, press `Ctrl + C` (you might need to press it twice).
