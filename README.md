@@ -19,6 +19,14 @@ To get started simply install using:
 pip install pylantir
 ```
 
+You need to provide your REDCap API URL and API token before starting the server.
+Set up environmental variables before starting the server:
+
+```bash
+export REDCAP_API_URL=<your API url>
+export REDCAP_API_TOKEN=<your API token>
+```
+
 Start a server called with AEtitle MWL_SERVER.
 
 ```bash
