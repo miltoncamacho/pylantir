@@ -1,5 +1,5 @@
 {
-    "db_path": "~/Desktop/worklist.db",
+    "db_path": "/path/to/worklist.db",
     "db_echo": "0",
     "db_update_interval": 60,
     "allowed_aet": [],
