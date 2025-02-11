@@ -12,9 +12,6 @@ import importlib.util
 from dotenv import set_key
 from concurrent.futures import ThreadPoolExecutor  # for background thread
 
-from ..mwl_server import run_mwl_server
-from ..redcap_to_db import sync_redcap_to_db_repeatedly
-
 lgr = logging.getLogger(__name__)
 
 def setup_logging(debug=False):
@@ -195,7 +192,10 @@ def main() -> None:
     print("pynetdicom logger level:", logging.getLogger("pynetdicom").getEffectiveLevel())
 
 
+
     if (args.command == "start"):
+        from ..mwl_server import run_mwl_server
+        from ..redcap_to_db import sync_redcap_to_db_repeatedly
         # Load configuration (either user-specified or default)
         config = load_config(args.pylantir_config)
 
@@ -250,14 +250,17 @@ def main() -> None:
             )
 
     if (args.command == "query-db"):
+        from ..mwl_server import run_mwl_server
+        from ..redcap_to_db import sync_redcap_to_db_repeatedly
         lgr.info("Querying the MWL database")
 
         run_test_script(
             "query_db.py")
 
     if (args.command == "test-client"):
+        from ..mwl_server import run_mwl_server
+        from ..redcap_to_db import sync_redcap_to_db_repeatedly
         lgr.info("Running client test for MWL")
-
         # Run client.py to ensure that the worklist server is running and accepting connections
         run_test_script(
         "client.py",
@@ -267,9 +270,10 @@ def main() -> None:
         )
 
     if (args.command == "test-mpps"):
+        from ..mwl_server import run_mwl_server
+        from ..redcap_to_db import sync_redcap_to_db_repeatedly
         lgr.info("Running MPPS test")
         # Run MPPS tester with relevant arguments
-
         run_test_script(
             "mpps_tester.py",
             host=args.ip,
