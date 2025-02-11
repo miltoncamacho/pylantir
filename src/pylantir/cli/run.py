@@ -194,16 +194,16 @@ def main() -> None:
 
 
     if (args.command == "start"):
-        from ..mwl_server import run_mwl_server
-        from ..redcap_to_db import sync_redcap_to_db_repeatedly
-        # Load configuration (either user-specified or default)
-        config = load_config(args.pylantir_config)
-
         # Extract the database path (default to worklist.db if missing) &
         # Extract the database echo setting (default to False if missing)
         db_path = config.get("db_path", "./worklist.db")
         db_echo = config.get("db_echo", "False")
         update_env_with_config(db_path=db_path, db_echo=db_echo)
+
+        from ..mwl_server import run_mwl_server
+        from ..redcap_to_db import sync_redcap_to_db_repeatedly
+        # Load configuration (either user-specified or default)
+        config = load_config(args.pylantir_config)
 
         # Extract the database update interval (default to 60 seconds if missing)
         db_update_interval = config.get("db_update_interval", 60)
