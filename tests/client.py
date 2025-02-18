@@ -27,6 +27,7 @@ def main(ip="127.0.0.1", port=4242, AEtitle="MWL_SERVER"):
     ds.ScheduledProcedureStepSequence[0].ScheduledProcedureStepStartTime = ""
     ds.ScheduledProcedureStepSequence[0].Modality = ""
     ds.ScheduledProcedureStepSequence[0].ScheduledPerformingPhysicianName = ""
+    ds.ScheduledProcedureStepSequence[0].ScheduledProcedureStepStatus = ""
 
     # Connect to the MWL server
     assoc = ae.associate(ip, port, ae_title=AEtitle)

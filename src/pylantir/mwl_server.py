@@ -45,38 +45,58 @@ def row_to_mwl_dataset(row: WorklistItem) -> Dataset:
     ds = Dataset()
 
     # Standard Patient Attributes
-    ds.PatientName = row.patient_name
-    ds.PatientID = row.patient_id
-    if row.patient_birth_date:
-        ds.PatientBirthDate = row.patient_birth_date
-    if row.patient_sex:
-        ds.PatientSex = row.patient_sex
-    if row.study_instance_uid:
-        ds.StudyInstanceUID = row.study_instance_uid
-    if row.patient_weight_lb:
-        ds.PatientWeight = row.patient_weight_lb or "100"
-    if row.study_description:
-        ds.StudyDescription = row.study_description
+    ds.PatientName = row.patient_name or "UNKNOWN"
+    ds.PatientID = row.patient_id or "UNKNOWN"
+    # ds.IssuerOfPatientID = row.issuer_of_patient_id
+    ds.PatientBirthDate = row.patient_birth_date or ""
+    ds.PatientSex = row.patient_sex or ""
+    # ds.OtherPatientIDs = row.other_patient_ids or ""
+    # ds.PatientAge = row.patient_age or ""
+    # ds.PatientSize = row.patient_size or "0"
+    ds.PatientWeight = row.patient_weight_lb or "100"
+    # ds.MedicalAlerts = row.medical_alerts or ""
+    # ds.Allergies = row.allergies or ""
+    # ds.AdditionalPatientHistory = row.additional_patient_history or ""
+    # ds.PregnancyStatus = row.pregnancy_status or "0"
 
-    # Protocol-related fields
-    if row.protocol_name:
-        ds.ProtocolName = row.protocol_name  # (0018,1030)
+    # Study-Level Attributes
+    ds.StudyInstanceUID = row.study_instance_uid or ""
+    # ds.StudyDate = row.study_date or ""
+    # ds.StudyTime = row.study_time or ""
+    # ds.AccessionNumber = row.accession_number or ""
+    ds.ReferringPhysicianName = row.referring_physician_name or ""
+    ds.StudyDescription = row.study_description or ""
+    # ds.NameOfPhysiciansReadingStudy = row.reading_physicians or ""
+    # ds.OperatorsName = row.operators_name or ""
+
+    # Requested Procedure Attributes
+    # ds.RequestingPhysician = row.requesting_physician or ""
+    # ds.RequestedProcedureDescription = row.requested_procedure_description or "111"
+    ds.RequestedProcedureDescription = "111"
+    # ds.RequestedProcedureID = row.requested_procedure_id or ""
+    ds.RequestedProcedureID = "111"
+    # Admission & Patient State
+    # ds.AdmissionID = row.admission_id or ""
+    # ds.IssuerOfAdmissionID = row.issuer_of_admission_id or ""
+    # ds.SpecialNeeds = row.special_needs or ""
+    # ds.CurrentPatientLocation = row.current_patient_location or ""
+    # ds.PatientState = row.patient_state or ""
 
     # Scheduled Procedure Step Sequence
     sps = Dataset()
     sps.Modality = row.modality or "MR"
-    sps.ScheduledStationAETitle = row.scheduled_station_aetitle or ""
+    # sps.ScheduledStationAETitle = row.scheduled_station_aetitle or ""
     sps.ScheduledProcedureStepStartDate = row.scheduled_start_date or ""
     sps.ScheduledProcedureStepStartTime = row.scheduled_start_time or ""
-    sps.ScheduledPerformingPhysicianName = row.performing_physician or ""
-    sps.ScheduledProcedureStepDescription = row.procedure_description or "DEFAULT_PROCEDURE"
+    # sps.ScheduledPerformingPhysicianName = row.performing_physician or ""
+    sps.ScheduledProcedureStepDescription = row.protocol_name or "DEFAULT_PROCEDURE"
     sps.ScheduledStationName = row.station_name or ""
+    sps.ScheduledProcedureStepStatus = row.performed_procedure_step_status or "SCHEDULED"
 
-    # Adding Local Protocol to Scheduled Protocol Code Sequence. This populates the recomended protocol name in the MWL.
-    # TODO: improve the protocol name handling
+    # Protocol Code Sequence
     if row.protocol_name:
         protocol_seq = Dataset()
-        protocol_seq.CodeValue = row.protocol_name[:16]  # Trim long names
+        protocol_seq.CodeValue = row.protocol_name[:16]
         protocol_seq.CodingSchemeDesignator = "LOCAL"
         protocol_seq.CodeMeaning = row.protocol_name
         sps.ScheduledProtocolCodeSequence = [protocol_seq]
@@ -162,6 +182,8 @@ def handle_mpps_n_create(event):
             entry.performed_procedure_step_status = "IN_PROGRESS"
             session.commit()
             lgr.info(f"DB updated: StudyInstanceUID {study_uid} set to IN_PROGRESS")
+    else:
+        lgr.warning("MPPS N-SET received without StudyInstanceUID. Database update skipped.")
     session.close()
 
     lgr.info(f"MPPS N-CREATE success: {ds.SOPInstanceUID} set to IN PROGRESS")
