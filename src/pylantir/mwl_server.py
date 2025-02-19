@@ -123,7 +123,11 @@ def handle_mwl_find(event):
 
     # Only return worklist entries that are still scheduled
     query = query.filter(
-        or_(WorklistItem.performed_procedure_step_status == "SCHEDULED", WorklistItem.performed_procedure_step_status == "IN_PROGRESS")
+        or_(
+            WorklistItem.performed_procedure_step_status == "SCHEDULED",
+            WorklistItem.performed_procedure_step_status == "IN_PROGRESS",
+            WorklistItem.performed_procedure_step_status == "DISCONTINUED"
+        )
     )
 
     results = query.all()
@@ -174,14 +178,14 @@ def handle_mpps_n_create(event):
     managed_instances[ds.SOPInstanceUID] = ds
 
     # Update database: Set status to IN_PROGRESS
-    study_uid = ds.get("StudyInstanceUID", None)
+    patient_id = ds.get("PatientID", None)
     session = Session()
-    if study_uid:
-        entry = session.query(WorklistItem).filter_by(study_instance_uid=study_uid).first()
+    if patient_id:
+        entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
         if entry:
             entry.performed_procedure_step_status = "IN_PROGRESS"
             session.commit()
-            lgr.info(f"DB updated: StudyInstanceUID {study_uid} set to IN_PROGRESS")
+            lgr.info(f"DB updated: PatientID {patient_id} set to IN_PROGRESS")
     else:
         lgr.warning("MPPS N-SET received without StudyInstanceUID. Database update skipped.")
     session.close()
@@ -206,21 +210,21 @@ def handle_mpps_n_set(event):
 
     # Log status update
     new_status = ds.get("PerformedProcedureStepStatus", None)
-    study_uid = ds.get("StudyInstanceUID", None)
+    patient_id = ds.get("PatientID", None)
 
     # Update database
     session = Session()
-    if study_uid and new_status:
-        entry = session.query(WorklistItem).filter_by(study_instance_uid=study_uid).first()
+    if patient_id and new_status:
+        entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
         if entry:
             if new_status.upper() == "COMPLETED":
                 entry.performed_procedure_step_status = "COMPLETED"
                 session.commit()
-                lgr.info(f"DB updated: StudyInstanceUID {study_uid} set to COMPLETED")
+                lgr.info(f"DB updated: PatientID {patient_id} set to COMPLETED")
             elif new_status.upper() == "DISCONTINUED":
                 entry.performed_procedure_step_status = "DISCONTINUED"
                 session.commit()
-                lgr.info(f"DB updated: StudyInstanceUID {study_uid} set to DISCONTINUED")
+                lgr.info(f"DB updated: PatientID {patient_id} set to DISCONTINUED")
     session.close()
 
     lgr.info(f"MPPS N-SET success: {req.RequestedSOPInstanceUID} updated to {new_status}")
