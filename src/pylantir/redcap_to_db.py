@@ -47,6 +47,7 @@ def fetch_redcap_entries(redcap_fields: list) -> list:
     # Ensure all requested fields exist in every record (fill missing fields with None)
     for record in records:
         record["redcap_event_name"] = record.get("redcap_event_name", "UNKNOWN_EVENT")
+        # record["redcap_repeat_instance"] = record.get("redcap_repeat_instance", "UNKNOWN_REPEAT")
         for field in redcap_fields:
             record.setdefault(field, None)  # Fill missing fields with None
 
@@ -75,13 +76,23 @@ def convert_weight(weight, weight_unit):
     return weight, round(weight / 0.453592, 2)  # (kg, lb)
 
 
-def mapping_redcap_event_name_to_ses_id(mri_visit_mapping, redcap_event):
+def mapping_redcap_event_name_to_ses_id(mri_visit_mapping: dict,
+                                        mri_visit_repeat_mapping: dict,
+                                        redcap_event: str,
+                                        repeat_event: str
+                                        ):
     """Map REDCap event name to SES ID."""
     try:
         ses_id = mri_visit_mapping.get(redcap_event, None)
+        lgr.debug(f"this is the mri_visit_repeat_mapping {mri_visit_repeat_mapping}")
+        lgr.debug(f"this is the repeat_event received {repeat_event}")
+
+        repeat_id = mri_visit_repeat_mapping.get(repeat_event, None)
         if ses_id is None:
             raise ValueError(f"SES ID not found for REDCap event: {redcap_event}")
-        return ses_id
+        if repeat_id is None:
+            raise ValueError(f"SES repeat indicator {repeat_event} not found for REDCap event: {redcap_event}")
+        return f"{ses_id}{repeat_id}"
     except Exception as e:
         lgr.error(f"Error mapping REDCap event name to SES ID: {e}")
         return None
@@ -89,6 +100,7 @@ def mapping_redcap_event_name_to_ses_id(mri_visit_mapping, redcap_event):
 
 def sync_redcap_to_db(
     mri_visit_mapping: dict,
+    mri_visit_repeat_mapping: dict,
     site_id: str,
     protocol: dict,
     redcap2wl: dict,
@@ -100,6 +112,7 @@ def sync_redcap_to_db(
 
     session = Session()
 
+    #TODO: Implement the repeat visit mapping
     # Extract the REDCap fields that need to be pulled
     default_fields = ["study_id", "family_id", "youth_dob_y", "t1_date", "demo_sex"]
     redcap_fields = list(redcap2wl.keys())
@@ -116,8 +129,11 @@ def sync_redcap_to_db(
         study_id = study_id.split('-')[-1] if study_id else None
         family_id = record.get("family_id")
         family_id = family_id.split('-')[-1] if family_id else None
+        repeat_id = record.get("redcap_repeat_instance") if record.get("redcap_repeat_instance") != "" else "1" # Default to 1 if not set
+        lgr.debug(f"Processing record for Study ID: {study_id} and Family ID: {family_id}")
+        lgr.debug(f"This is the repeat event {repeat_id}")
         ses_id = mapping_redcap_event_name_to_ses_id(
-            mri_visit_mapping, record.get("redcap_event_name")
+            mri_visit_mapping, mri_visit_repeat_mapping, record.get("redcap_event_name",None), str(repeat_id)
         )
 
         PatientName = f"cpip-id-{study_id}^fa-{family_id}"
@@ -189,6 +205,7 @@ def sync_redcap_to_db(
 
 def sync_redcap_to_db_repeatedly(
     mri_visit_mapping=None,
+    mri_visit_repeat_mapping=None,
     site_id=None,
     protocol=None,
     redcap2wl=None,
@@ -202,6 +219,7 @@ def sync_redcap_to_db_repeatedly(
         try:
             sync_redcap_to_db(
                 mri_visit_mapping=mri_visit_mapping,
+                mri_visit_repeat_mapping=mri_visit_repeat_mapping,
                 site_id=site_id,
                 protocol=protocol,
                 redcap2wl=redcap2wl,
@@ -221,6 +239,7 @@ if __name__ == "__main__":
     try:
         sync_redcap_to_db_repeatedly(
             mri_visit_mapping=None,
+            mri_visit_repeat_mapping=None,
             site_id=None,
             protocol=None,
             redcap2wl=None,
