@@ -94,10 +94,16 @@ def row_to_mwl_dataset(row: WorklistItem) -> Dataset:
     sps.ScheduledProcedureStepStatus = row.performed_procedure_step_status or "SCHEDULED"
 
     # Protocol Code Sequence
+    # you need to map action code (CodeValue) and coding scheme designator (CodingSchemeDesignator) for this to work
     if row.protocol_name:
         protocol_seq = Dataset()
-        protocol_seq.CodeValue = row.protocol_name[:16]
-        protocol_seq.CodingSchemeDesignator = "LOCAL"
+        protocol_seq.CodeValue = row.protocol_name
+        # protocol_seq.CodeValue = "CPIP"
+
+        # protocol_seq.ActionCode = "cpipmar03"
+        # protocol_seq.CodingSchemeDesignator = "GEHC"
+        protocol_seq.CodingSchemeDesignator = row.hisris_coding_designator
+        # protocol_seq.CodeMeaning = row.protocol_name
         protocol_seq.CodeMeaning = row.protocol_name
         sps.ScheduledProtocolCodeSequence = [protocol_seq]
 
@@ -149,33 +155,26 @@ def handle_mpps_n_create(event):
     """Handles N-CREATE for MPPS (Procedure Start)."""
     req = event.request
 
-    if req.AffectedSOPInstanceUID is None:
-        lgr.error("MPPS N-CREATE failed: Missing Affected SOP Instance UID")
-        return 0x0106, None  # Invalid Attribute Value
-
-    # Prevent duplicate MPPS instances
-    if req.AffectedSOPInstanceUID in managed_instances:
-        lgr.error("MPPS N-CREATE failed: Duplicate SOP Instance UID")
-        return 0x0111, None  # Duplicate SOP Instance
-
     attr_list = event.attribute_list
-
-    if "PerformedProcedureStepStatus" not in attr_list:
-        lgr.error("MPPS N-CREATE failed: Missing PerformedProcedureStepStatus")
-        return 0x0120, None  # Missing Attribute
-    if attr_list.PerformedProcedureStepStatus.upper() != "IN PROGRESS":
-        lgr.error("MPPS N-CREATE failed: Invalid PerformedProcedureStepStatus")
-        return 0x0106, None  # Invalid Attribute Value
-
     ds = Dataset()
     ds.SOPClassUID = ModalityPerformedProcedureStep
-    ds.SOPInstanceUID = req.AffectedSOPInstanceUID
-
-    # Copy attributes
+    ds.SOPInstanceUID = req.AffectedSOPInstanceUID or "UNKNOWN_UID"
     ds.update(attr_list)
 
     # Store MPPS instance
     managed_instances[ds.SOPInstanceUID] = ds
+
+    # Validation logic (log warnings, don't return errors to MRI scanner)
+    if not req.AffectedSOPInstanceUID:
+        lgr.warning("MPPS N-CREATE: Missing Affected SOP Instance UID")
+    elif req.AffectedSOPInstanceUID in managed_instances:
+        lgr.warning("MPPS N-CREATE: Duplicate SOP Instance UID received")
+
+    status = attr_list.get("PerformedProcedureStepStatus", "").upper()
+    if not status:
+        lgr.warning("MPPS N-CREATE: Missing PerformedProcedureStepStatus")
+    elif status != "IN PROGRESS":
+        lgr.warning(f"MPPS N-CREATE: Unexpected PerformedProcedureStepStatus = {status}")
 
     # Update database: Set status to IN_PROGRESS
     patient_id = ds.get("PatientID", None)
@@ -187,32 +186,31 @@ def handle_mpps_n_create(event):
             session.commit()
             lgr.info(f"DB updated: PatientID {patient_id} set to IN_PROGRESS")
     else:
-        lgr.warning("MPPS N-SET received without StudyInstanceUID. Database update skipped.")
+        lgr.warning("MPPS N-CREATE: No PatientID found in attributes. DB update skipped.")
+
     session.close()
+    lgr.info(f"MPPS N-CREATE processed: {ds.SOPInstanceUID}")
 
-    lgr.info(f"MPPS N-CREATE success: {ds.SOPInstanceUID} set to IN PROGRESS")
-
-    return 0x0000, ds  # Success
-
+    return 0x0000, ds  # Always return Success
 
 def handle_mpps_n_set(event):
     """Handles N-SET for MPPS (Procedure Completion)."""
     req = event.request
-    if req.RequestedSOPInstanceUID not in managed_instances:
-        lgr.error("MPPS N-SET failed: SOP Instance not recognized")
-        return 0x0112, None  # No Such Object Instance
+    sop_uid = req.RequestedSOPInstanceUID
 
-    ds = managed_instances[req.RequestedSOPInstanceUID]
+    if sop_uid not in managed_instances:
+        lgr.warning(f"MPPS N-SET: Unknown SOP Instance UID {sop_uid}")
+        ds = Dataset()
+        ds.SOPInstanceUID = sop_uid
+        return 0x0000, ds  # Still return success
+
+    ds = managed_instances[sop_uid]
     mod_list = event.attribute_list
-
-    # Update MPPS instance
     ds.update(mod_list)
 
-    # Log status update
     new_status = ds.get("PerformedProcedureStepStatus", None)
     patient_id = ds.get("PatientID", None)
 
-    # Update database
     session = Session()
     if patient_id and new_status:
         entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
@@ -225,11 +223,18 @@ def handle_mpps_n_set(event):
                 entry.performed_procedure_step_status = "DISCONTINUED"
                 session.commit()
                 lgr.info(f"DB updated: PatientID {patient_id} set to DISCONTINUED")
+            else:
+                lgr.warning(f"MPPS N-SET: Unrecognized status {new_status}")
+        else:
+            lgr.warning(f"MPPS N-SET: No DB entry found for PatientID {patient_id}")
+    else:
+        lgr.warning("MPPS N-SET: Missing PatientID or status. No DB update.")
+
     session.close()
+    lgr.info(f"MPPS N-SET processed: {sop_uid} -> {new_status}")
 
-    lgr.info(f"MPPS N-SET success: {req.RequestedSOPInstanceUID} updated to {new_status}")
+    return 0x0000, ds  # Always return Success
 
-    return 0x0000, ds  # Success
 
 
 # --------------------------------------------------------------------

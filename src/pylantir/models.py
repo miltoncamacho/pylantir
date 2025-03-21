@@ -37,6 +37,7 @@ class WorklistItem(Base):
     procedure_description = Column(String(200))
     protocol_name = Column(String(100))
     station_name = Column(String(100))
+    hisris_coding_designator = Column(String(100))
     performed_procedure_step_status = Column(String, default="SCHEDULED")
 
 

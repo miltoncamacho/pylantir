@@ -88,7 +88,7 @@ usage: pylantir [-h] [--AEtitle AETITLE] [--ip IP] [--port PORT] [--pylantir_con
 - **--pylantir_config PYLANTIR_CONFIG**: Path to the configuration JSON file containing pylantir configs:
   - **allowed_aet**: List of allowed AE titles e.g. `["MRI_SCANNER", "MRI_SCANNER_2"]`
   - **site**: Site ID:string
-  - **protocol**: `{"site": "protocol_name"}`
+  - **protocol**: `{"site": "protocol_name", "mapping": "HIS/RIS mapping"}`
   - **redcap2wl**: Dictionary of REDCap fields to worklist fields mapping e.g., `{"redcap_field": "worklist_field"}`
 - **--mpps_action {create,set}**: Action to perform for MPPS either create or set
 - **--mpps_status {COMPLETED,DISCONTINUED}**: Status to set for MPPS either COMPLETED or DISCONTINUED
@@ -124,7 +124,8 @@ As a default pylantir will try to read a JSON structured file with the following
     "status": "performed_procedure_step_status"
   },
   "protocol": {
-    "792": "BRAIN_MRI_3T"
+    "792": "BRAIN_MRI_3T",
+    "mapping": "GEHC"
   }
 }
 ```

@@ -185,6 +185,7 @@ def sync_redcap_to_db(
                 scheduled_start_date=record.get("mri_date"),
                 scheduled_start_time=record.get("mri_time"),
                 protocol_name=protocol.get(site_id, "DEFAULT_PROTOCOL"),
+                hisris_coding_designator=protocol.get("mapping", "scannermapper"),
                 # patient_weight_kg=patient_weight_kg,
                 patient_weight_lb=record.get("patient_weight_lb", ""),
                 # referring_physician_name=record.get("referring_physician"),
