@@ -1,5 +1,6 @@
 import os
 import logging
+import pandas as pd
 from redcap import Project
 import uuid
 from sqlalchemy.orm import sessionmaker
@@ -22,7 +23,7 @@ Session = sessionmaker(bind=engine)
 
 
 def fetch_redcap_entries(redcap_fields: list) -> list:
-    """Fetch scheduled procedures from REDCap using PyCap."""
+    """Fetch REDCap entries using PyCap and return a list of filtered dicts."""
     project = Project(REDCAP_API_URL, REDCAP_API_TOKEN)
 
     if not redcap_fields:
@@ -31,8 +32,6 @@ def fetch_redcap_entries(redcap_fields: list) -> list:
 
     # Fetch metadata to get valid REDCap field names
     valid_fields = {field["field_name"] for field in project.export_metadata()}
-
-    # Only keep fields that actually exist in REDCap
     redcap_fields = [field for field in redcap_fields if field in valid_fields]
 
     if not redcap_fields:
@@ -41,20 +40,43 @@ def fetch_redcap_entries(redcap_fields: list) -> list:
 
     lgr.info(f"Fetching REDCap data for fields: {redcap_fields}")
 
-    # Fetch records
-    records = project.export_records(fields=redcap_fields, format_type="json")
+    # Export data
+    records = project.export_records(fields=redcap_fields, format_type="df")
 
-    # Ensure all requested fields exist in every record (fill missing fields with None)
-    for record in records:
-        record["redcap_event_name"] = record.get("redcap_event_name", "UNKNOWN_EVENT")
-        # record["redcap_repeat_instance"] = record.get("redcap_repeat_instance", "UNKNOWN_REPEAT")
-        for field in redcap_fields:
-            record.setdefault(field, None)  # Fill missing fields with None
-
-    if not records:
+    if records.empty:
         lgr.warning("No records retrieved from REDCap.")
+        return []
 
-    return records
+    filtered_records = []
+
+    # Group by 'record_id' (index level 0)
+    for record_id, group in records.groupby(level=0):
+
+        # Try to get baseline (non-repeated instrument) values
+        baseline_rows = group[group['redcap_repeat_instrument'].isna()]
+        baseline_row = baseline_rows.iloc[0] if not baseline_rows.empty else {}
+
+        # Filter for valid MRI rows only
+        mri_rows = group[
+            (group["redcap_repeat_instrument"] == "mri") &
+            (group.get("mri_instance").notna()) &
+            (group.get("mri_instance") != "")
+        ]
+
+        for _, mri_row in mri_rows.iterrows():
+            record = {"record_id": record_id}
+
+            # Merge fields from baseline and mri_row, only include requested fields
+            for field in redcap_fields:
+                record[field] = (
+                    mri_row.get(field)
+                    if pd.notna(mri_row.get(field))
+                    else baseline_row.get(field)
+                )
+
+            filtered_records.append(record)
+
+    return filtered_records
 
 # TODO: Implement age binning for paricipants
 def age_binning():
@@ -114,7 +136,7 @@ def sync_redcap_to_db(
 
     #TODO: Implement the repeat visit mapping
     # Extract the REDCap fields that need to be pulled
-    default_fields = ["study_id", "family_id", "youth_dob_y", "t1_date", "demo_sex"]
+    default_fields = ["record_id", "study_id", "mri_instance", "mri_date", "mri_time", "family_id", "youth_dob_y", "t1_date", "demo_sex"]
     redcap_fields = list(redcap2wl.keys())
 
     # Ensure certain default fields are always present
@@ -132,9 +154,7 @@ def sync_redcap_to_db(
         repeat_id = record.get("redcap_repeat_instance") if record.get("redcap_repeat_instance") != "" else "1" # Default to 1 if not set
         lgr.debug(f"Processing record for Study ID: {study_id} and Family ID: {family_id}")
         lgr.debug(f"This is the repeat event {repeat_id}")
-        ses_id = mapping_redcap_event_name_to_ses_id(
-            mri_visit_mapping, mri_visit_repeat_mapping, record.get("redcap_event_name",None), str(repeat_id)
-        )
+        ses_id = record.get("mri_instance")
 
         PatientName = f"cpip-id-{study_id}^fa-{family_id}"
         PatientID = f"sub-{study_id}_ses-{ses_id}_fam-{family_id}_site-{site_id}"
@@ -160,7 +180,8 @@ def sync_redcap_to_db(
             existing_entry.patient_birth_date = record.get("youth_dob_y", "19000101")
             existing_entry.patient_sex = record.get("demo_sex")
             existing_entry.modality = record.get("modality", "MR")
-
+            existing_entry.scheduled_start_date = record.get("mri_date")
+            existing_entry.scheduled_start_time = record.get("mri_time")
             # Dynamically update DICOM worklist fields from REDCap
             for redcap_field, dicom_field in redcap2wl.items():
                 if redcap_field in record:
@@ -185,8 +206,8 @@ def sync_redcap_to_db(
                 patient_birth_date=f"{record.get('youth_dob_y', '2012')}0101",
                 patient_sex=record.get("demo_sex"),
                 modality=record.get("modality", "MR"),
-                # scheduled_start_date=record.get("scheduled_date"),
-                # scheduled_start_time=record.get("scheduled_time"),
+                scheduled_start_date=record.get("mri_date"),
+                scheduled_start_time=record.get("mri_time"),
                 protocol_name=protocol.get(site_id, "DEFAULT_PROTOCOL"),
                 # patient_weight_kg=patient_weight_kg,
                 patient_weight_lb=record.get("patient_weight_lb", ""),

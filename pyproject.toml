@@ -30,6 +30,7 @@ dependencies = [
     "uuid",
     "coloredlogs",
     "python-dotenv",
+    "pandas",
 ]
 
 [project.scripts]
