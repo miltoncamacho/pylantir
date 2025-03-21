@@ -212,10 +212,6 @@ def main() -> None:
         # Extract allowed AE Titles (default to empty list if missing)
         allowed_aet = config.get("allowed_aet", [])
 
-        # Extract mri_visit_session_mapping (default to empty list if missing)
-        mri_visit_session_mapping = config.get("mri_visit_session_mapping", {})
-        mri_visit_repeat_mapping = config.get("mri_visit_repeat_mapping", {})
-
         # Extract the site id
         site = config.get("site", None)
 
@@ -230,8 +226,6 @@ def main() -> None:
         with ThreadPoolExecutor(max_workers=2) as executor:
             future = executor.submit(
                 sync_redcap_to_db_repeatedly,
-                mri_visit_mapping=mri_visit_session_mapping,
-                mri_visit_repeat_mapping=mri_visit_repeat_mapping,
                 site_id=site,
                 protocol=protocol,
                 redcap2wl=redcap2wl,

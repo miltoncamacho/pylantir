@@ -98,31 +98,7 @@ def convert_weight(weight, weight_unit):
     return weight, round(weight / 0.453592, 2)  # (kg, lb)
 
 
-def mapping_redcap_event_name_to_ses_id(mri_visit_mapping: dict,
-                                        mri_visit_repeat_mapping: dict,
-                                        redcap_event: str,
-                                        repeat_event: str
-                                        ):
-    """Map REDCap event name to SES ID."""
-    try:
-        ses_id = mri_visit_mapping.get(redcap_event, None)
-        lgr.debug(f"this is the mri_visit_repeat_mapping {mri_visit_repeat_mapping}")
-        lgr.debug(f"this is the repeat_event received {repeat_event}")
-
-        repeat_id = mri_visit_repeat_mapping.get(repeat_event, None)
-        if ses_id is None:
-            raise ValueError(f"SES ID not found for REDCap event: {redcap_event}")
-        if repeat_id is None:
-            raise ValueError(f"SES repeat indicator {repeat_event} not found for REDCap event: {redcap_event}")
-        return f"{ses_id}{repeat_id}"
-    except Exception as e:
-        lgr.error(f"Error mapping REDCap event name to SES ID: {e}")
-        return None
-
-
 def sync_redcap_to_db(
-    mri_visit_mapping: dict,
-    mri_visit_repeat_mapping: dict,
     site_id: str,
     protocol: dict,
     redcap2wl: dict,
@@ -136,7 +112,7 @@ def sync_redcap_to_db(
 
     #TODO: Implement the repeat visit mapping
     # Extract the REDCap fields that need to be pulled
-    default_fields = ["record_id", "study_id", "mri_instance", "mri_date", "mri_time", "family_id", "youth_dob_y", "t1_date", "demo_sex"]
+    default_fields = ["record_id", "study_id", "redcap_repeat_instrument", "mri_instance", "mri_date", "mri_time", "family_id", "youth_dob_y", "t1_date", "demo_sex"]
     redcap_fields = list(redcap2wl.keys())
 
     # Ensure certain default fields are always present
@@ -225,8 +201,6 @@ def sync_redcap_to_db(
 
 
 def sync_redcap_to_db_repeatedly(
-    mri_visit_mapping=None,
-    mri_visit_repeat_mapping=None,
     site_id=None,
     protocol=None,
     redcap2wl=None,
@@ -239,8 +213,6 @@ def sync_redcap_to_db_repeatedly(
     while not STOP_EVENT.is_set():
         try:
             sync_redcap_to_db(
-                mri_visit_mapping=mri_visit_mapping,
-                mri_visit_repeat_mapping=mri_visit_repeat_mapping,
                 site_id=site_id,
                 protocol=protocol,
                 redcap2wl=redcap2wl,
@@ -259,8 +231,6 @@ if __name__ == "__main__":
     # from a signal handler or from another part of your code.
     try:
         sync_redcap_to_db_repeatedly(
-            mri_visit_mapping=None,
-            mri_visit_repeat_mapping=None,
             site_id=None,
             protocol=None,
             redcap2wl=None,

@@ -87,8 +87,6 @@ usage: pylantir [-h] [--AEtitle AETITLE] [--ip IP] [--port PORT] [--pylantir_con
 - **--port PORT**: Port for the server
 - **--pylantir_config PYLANTIR_CONFIG**: Path to the configuration JSON file containing pylantir configs:
   - **allowed_aet**: List of allowed AE titles e.g. `["MRI_SCANNER", "MRI_SCANNER_2"]`
-  - **mri_visit_session_mapping**: Mapping of MRI visit to session e.g., `{"T1": "1", "T2": "2"}`
-  - **mri_visit_repeat_mapping**: Mapping of MRI visit repeat to session e.g., `{"1": "a", "2": "b"}`
   - **site**: Site ID:string
   - **protocol**: `{"site": "protocol_name"}`
   - **redcap2wl**: Dictionary of REDCap fields to worklist fields mapping e.g., `{"redcap_field": "worklist_field"}`
@@ -108,21 +106,10 @@ As a default pylantir will try to read a JSON structured file with the following
   "db_echo": "False",
   "db_update_interval": 60,
   "allowed_aet": [],
-  "mri_visit_session_mapping": {
-    "t1_arm_1": "1",
-    "t2_arm_1": "2",
-    "t3_arm_1": "3"
-  },
-  "mri_visit_repeat_mapping": {
-    "1": "a",
-    "2": "b",
-    "3": "c",
-    "4": "d",
-    "5": "e"
-  },
   "site": "792",
   "redcap2wl": {
     "study_id": "study_id",
+    "instrument": "redcap_repeat_instrument",
     "session_id" : "mri_instance",
     "family_id": "family_id",
     "youth_dob_y": "youth_dob_y",
