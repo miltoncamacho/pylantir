@@ -107,6 +107,7 @@ def sync_redcap_to_db(
 
     if not redcap2wl:
         lgr.error("No field mapping (redcap2wl) provided for syncing.")
+        return
 
     session = Session()
 
@@ -133,7 +134,8 @@ def sync_redcap_to_db(
         ses_id = record.get("mri_instance")
 
         PatientName = f"cpip-id-{study_id}^fa-{family_id}"
-        PatientID = f"sub-{study_id}_ses-{ses_id}_fam-{family_id}_site-{site_id}"
+        PatientID = f"sub_{study_id}_ses_{ses_id}_fam_{family_id}_site_{site_id}"
+        PatientID_ = f"sub-{study_id}_ses-{ses_id}_fam-{family_id}_site-{site_id}"
 
         if not PatientID:
             lgr.warning("Skipping record due to missing Study ID.")
@@ -149,8 +151,18 @@ def sync_redcap_to_db(
             .first()
         )
 
+        existing_entry_ = (
+            session.query(WorklistItem)
+            .filter_by(patient_id=PatientID_)
+            .first()
+        )
         if existing_entry:
             logging.debug(f"Updating existing worklist entry for PatientID {PatientID}")
+        elif existing_entry_:
+            logging.debug(f"Updating existing worklist entry for PatientID {PatientID_}")
+            existing_entry = existing_entry_
+
+        if existing_entry:
             existing_entry.patient_name = PatientName
             existing_entry.patient_id = PatientID
             existing_entry.patient_birth_date = record.get("youth_dob_y", "19000101")
