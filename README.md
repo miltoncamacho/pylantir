@@ -35,12 +35,19 @@ pylantir start --ip 127.0.0.1 --port 4242 --AEtitle MWL_SERVER --pylantir_config
 
 ## Tests
 
-Once your modality worklist server is running you can test it running the following:
+If you want to run the tests make sure to clone the repository and run them from there.
+
+Git clone the repository:
+
+```bash
+git clone https://github.com/miltoncamacho/pylantir
+cd pylantir/tests
+```
 
 Query the worklist database to check that you have some entries using:
 
 ```bash
-pylantir query-db
+python query-db.py
 ```
 
 Then, you can get a StudyUID from one of the entries to test the MPPS workflow. For example: 1.2.840.10008.3.1.2.3.4.55635351412689303463019139483773956632
@@ -48,19 +55,19 @@ Then, you can get a StudyUID from one of the entries to test the MPPS workflow. 
 Take this and run a create action to mark the worklist Procedure Step Status as IN_PROGRESS
 
 ```bash
-pylantir test-mpps --AEtitle MWL_SERVER --mpps_action create --callingAEtitle MWL_TESTER --ip 127.0.0.1 --port 4242 --study_uid 1.2.840.10008.3.1.2.3.4.55635351412689303463019139483773956632
+python test-mpps.py --AEtitle MWL_SERVER --mpps_action create --callingAEtitle MWL_TESTER --ip 127.0.0.1 --port 4242 --study_uid 1.2.840.10008.3.1.2.3.4.55635351412689303463019139483773956632
 ```
 
 You can verify that this in fact modified your database re-running:
 
 ```bash
-pylantir query-db
+python query-db.py
 ```
 
 Finally, you can also simulate the pocedure completion efectively updating the Procedure Step Status to COMPLETED or DISCONTINUED:
 
 ```bash
-pylantir test-mpps --AEtitle MWL_SERVER --mpps_action set --mpps_status COMPLETED --callingAEtitle MWL_TESTER --ip 127.0.0.1 --port 4242 --study_uid 1.2.840.10008.3.1.2.3.4.55635351412689303463019139483773956632 --sop_uid 1.2.840.10008.3.1.2.3.4.187176383255263644225774937658729238426
+python test-mpps.py --AEtitle MWL_SERVER --mpps_action set --mpps_status COMPLETED --callingAEtitle MWL_TESTER --ip 127.0.0.1 --port 4242 --study_uid 1.2.840.10008.3.1.2.3.4.55635351412689303463019139483773956632 --sop_uid 1.2.840.10008.3.1.2.3.4.187176383255263644225774937658729238426
 ```
 
 ## Usage
