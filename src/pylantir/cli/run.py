@@ -209,6 +209,9 @@ def main() -> None:
         # Extract the database update interval (default to 60 seconds if missing)
         db_update_interval = config.get("db_update_interval", 60)
 
+        # Extract the operation interval (default from 00:00 to 23:59 hours if missing)
+        operation_interval = config.get("operation_interval", {"start_time": [0,0], "end_time": [23,59]})
+
         # Extract allowed AE Titles (default to empty list if missing)
         allowed_aet = config.get("allowed_aet", [])
 
@@ -219,7 +222,6 @@ def main() -> None:
         redcap2wl = config.get("redcap2wl", {})
 
         # EXtract protocol mapping
-
         protocol = config.get("protocol", {})
 
         # Create and update the MWL database
@@ -230,6 +232,7 @@ def main() -> None:
                 protocol=protocol,
                 redcap2wl=redcap2wl,
                 interval=db_update_interval,
+                operation_interval=operation_interval,
             )
 
                 # sync_redcap_to_db(

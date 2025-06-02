@@ -3,6 +3,16 @@
     "db_echo": "0",
     "db_update_interval": 60,
     "allowed_aet": [],
+    "operation_interval": {
+        "start_time": [
+            0,
+            0
+        ],
+        "end_time": [
+            23,
+            59
+        ]
+    },
     "mri_visit_session_mapping": {
         "t1_arm_1": "1",
         "t2_arm_1": "2",
@@ -10,7 +20,7 @@
     },
     "site": "792",
     "redcap2wl": {
-        "study_id" : "study_id",
+        "study_id": "study_id",
         "family_id": "family_id",
         "youth_dob_y": "youth_dob_y",
         "t1_date": "t1_date",
@@ -22,7 +32,7 @@
         "performing_physician": "performing_physician",
         "station_name": "station_name",
         "status": "performed_procedure_step_status"
-        },
+    },
     "protocol": {
         "792": "BRAIN_MRI_3T"
     }

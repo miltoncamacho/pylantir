@@ -8,6 +8,7 @@ from .db_setup import engine
 from .models import WorklistItem
 import time
 import threading
+from datetime import datetime, time, timedelta
 
 lgr = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ Session = sessionmaker(bind=engine)
 
 
 
-def fetch_redcap_entries(redcap_fields: list) -> list:
+def fetch_redcap_entries(redcap_fields: list, interval: float) -> list:
     """Fetch REDCap entries using PyCap and return a list of filtered dicts."""
     project = Project(REDCAP_API_URL, REDCAP_API_TOKEN)
 
@@ -41,7 +42,9 @@ def fetch_redcap_entries(redcap_fields: list) -> list:
     lgr.info(f"Fetching REDCap data for fields: {redcap_fields}")
 
     # Export data
-    records = project.export_records(fields=redcap_fields, format_type="df")
+    datetime_now = datetime.now()
+    datetime_interval = datetime_now - timedelta(seconds=interval)
+    records = project.export_records(fields=redcap_fields, date_begin=datetime_interval, date_end=datetime_now, format_type="df")
 
     if records.empty:
         lgr.warning("No records retrieved from REDCap.")
@@ -102,6 +105,7 @@ def sync_redcap_to_db(
     site_id: str,
     protocol: dict,
     redcap2wl: dict,
+    interval: float = 60.0,
 ) -> None:
     """Sync REDCap patient data with the worklist database."""
 
@@ -121,7 +125,7 @@ def sync_redcap_to_db(
         if i not in redcap_fields:
             redcap_fields.append(i)
 
-    redcap_entries = fetch_redcap_entries(redcap_fields)
+    redcap_entries = fetch_redcap_entries(redcap_fields, interval)
 
     for record in redcap_entries:
         study_id = record.get("study_id")
@@ -217,21 +221,32 @@ def sync_redcap_to_db_repeatedly(
     site_id=None,
     protocol=None,
     redcap2wl=None,
-    interval=60
+    interval=60,
+    operation_interval={"start_time": [00,00], "end_time": [23,59]},
 ):
     """
     Keep syncing with REDCap in a loop every `interval` seconds.
     Exit cleanly when STOP_EVENT is set.
     """
+    start_hour, start_minute = operation_interval.get("start_time", [0, 0])
+    end_hour, end_minute = operation_interval.get("end_time", [23, 59])
+    start_time = time(start_hour, start_minute)
+    end_time = time(end_hour, end_minute)
+
     while not STOP_EVENT.is_set():
-        try:
-            sync_redcap_to_db(
-                site_id=site_id,
-                protocol=protocol,
-                redcap2wl=redcap2wl,
-            )
-        except Exception as exc:
-            logging.error(f"Error in REDCap sync: {exc}")
+        # define the current time without seconds and miroseconds
+        now = datetime.now().time()
+        if start_time <= now <= end_time:
+            logging.info(f"Syncing REDCap to DB for site {site_id} at {now}.")
+            try:
+                sync_redcap_to_db(
+                    site_id=site_id,
+                    protocol=protocol,
+                    redcap2wl=redcap2wl,
+                    interval=interval,
+                )
+            except Exception as exc:
+                logging.error(f"Error in REDCap sync: {exc}")
 
         # Wait up to `interval` seconds, or break early if STOP_EVENT is set
         STOP_EVENT.wait(interval)
@@ -247,7 +262,8 @@ if __name__ == "__main__":
             site_id=None,
             protocol=None,
             redcap2wl=None,
-            interval=60
+            interval=60,
+            operation_interval={"start_time": [0, 0], "end_time": [23, 59]},
         )
     except KeyboardInterrupt:
         logging.info("KeyboardInterrupt received. Stopping background sync...")
