@@ -8,7 +8,7 @@ from .db_setup import engine
 from .models import WorklistItem
 import time
 import threading
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, date, timedelta
 
 lgr = logging.getLogger(__name__)
 
@@ -233,23 +233,53 @@ def sync_redcap_to_db_repeatedly(
     start_time = time(start_hour, start_minute)
     end_time = time(end_hour, end_minute)
 
+    # Track the last sync date
+    last_sync_date = None
+
     while not STOP_EVENT.is_set():
-        # define the current time without seconds and miroseconds
-        now = datetime.now().time()
+        # Define the current time without seconds and miroseconds
+        now_dt = datetime.now().replace(second=0, microsecond=0)
+        now = now_dt.time()
+        today = now_dt.date()
+
         if start_time <= now <= end_time:
+            # First sync of the day check
+            is_first_run = last_sync_date != today
+            if is_first_run and ( last_sync_date is not None ):
+                logging.info(f"First sync of the day for site {site_id} at {now}.")
+                if last_sync_date:
+                    delta = datetime.combine(today, start_time) - datetime.combine(last_sync_date, end_time)
+                    # Redefine the interval based on the last sync date
+                    extended_interval = delta.total_seconds()
+                    logging.info("Running using extebded interval.")
+            else:
+                # Use the defined interval
+                logging.info("Running using default interval.")
             logging.info(f"Syncing REDCap to DB for site {site_id} at {now}.")
+
             try:
-                sync_redcap_to_db(
-                    site_id=site_id,
-                    protocol=protocol,
-                    redcap2wl=redcap2wl,
-                    interval=interval,
-                )
+                if is_first_run and ( last_sync_date is not None ):
+                    sync_redcap_to_db(
+                        site_id=site_id,
+                        protocol=protocol,
+                        redcap2wl=redcap2wl,
+                        interval=extended_interval,
+                    )
+                    last_sync_date = today
+                else:
+                    sync_redcap_to_db(
+                        site_id=site_id,
+                        protocol=protocol,
+                        redcap2wl=redcap2wl,
+                        interval=interval,
+                    )
+                    last_sync_date = today
             except Exception as exc:
                 logging.error(f"Error in REDCap sync: {exc}")
 
-        # Wait up to `interval` seconds, or break early if STOP_EVENT is set
-        STOP_EVENT.wait(interval)
+        # Use extended interval on first run, regular otherwise
+        wait_time = extended_interval if is_first_run and ( last_sync_date is not None ) else interval
+        STOP_EVENT.wait(wait_time)
 
     logging.info("Exiting sync_redcap_to_db_repeatedly because STOP_EVENT was set.")
 
