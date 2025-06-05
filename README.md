@@ -97,6 +97,8 @@ usage: pylantir [-h] [--AEtitle AETITLE] [--ip IP] [--port PORT] [--pylantir_con
   - **site**: Site ID:string
   - **protocol**: `{"site": "protocol_name", "mapping": "HIS/RIS mapping"}`
   - **redcap2wl**: Dictionary of REDCap fields to worklist fields mapping e.g., `{"redcap_field": "worklist_field"}`
+  - **db_update_interval**: How often to reload the database e
+  - **operation_interval**: What is the time range in a day in which the database will be updated e.g., `{"start_time":[hours,minutes],"end_time":[hours,minutes]}`
 - **--mpps_action {create,set}**: Action to perform for MPPS either create or set
 - **--mpps_status {COMPLETED,DISCONTINUED}**: Status to set for MPPS either COMPLETED or DISCONTINUED
 - **--callingAEtitle CALLINGAETITLE**: Calling AE Title for MPPS, it helps when the MWL is limited to only accept certain AE titles
@@ -112,6 +114,7 @@ As a default pylantir will try to read a JSON structured file with the following
   "db_path": "/path/to/worklist.db",
   "db_echo": "False",
   "db_update_interval": 60,
+  "operation_interval": {"start_time": [0,0],"end_time": [23,59]},
   "allowed_aet": [],
   "site": "792",
   "redcap2wl": {
