@@ -1,31 +1,53 @@
-name: Publish Python Package
+name: Publish to PyPI on tag
 
 on:
   push:
     tags:
-      - "v*"  # Only run on version tags like v1.2.3
+      - "v*"               # e.g. v0.1.7, v1.2.0-rc1
 
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read       # checkout
+      id-token: write      # (optional, only if you use OIDC for PyPI)
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      # 1) Get the code
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      # 2) Python toolchain
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
+      # 3) Build deps
       - name: Install build tools
         run: |
           python -m pip install --upgrade pip
-          pip install build twine
+          pip install build twine toml
 
+      # 4) Inject tag version into pyproject.toml  ─────────────────────────
+      - name: Set version from Git tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"          # → 0.1.7
+          echo "Publishing version ${TAG}"
+          python - <<'PY'
+import toml, os, pathlib, sys
+tag = os.environ["TAG"]
+pyproject = pathlib.Path("pyproject.toml")
+data = toml.load(pyproject)
+data["project"]["version"] = tag
+with pyproject.open("w", encoding="utf-8") as f:
+    toml.dump(data, f)
+print("pyproject.toml patched with version =", tag)
+PY
+      # 5) Build the sdist & wheel
       - name: Build package
         run: python -m build
 
+      # 6) Upload to PyPI
       - name: Publish to PyPI
         env:
           TWINE_USERNAME: __token__
