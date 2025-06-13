@@ -63,7 +63,9 @@ def fetch_redcap_entries(redcap_fields: list, interval: float) -> list:
         mri_rows = group[
             (group["redcap_repeat_instrument"] == "mri") &
             (group.get("mri_instance").notna()) &
-            (group.get("mri_instance") != "")
+            (group.get("mri_instance") != "" ) &
+            (group.get("mri_date").notna()) &
+            (group.get("mri_time").notna())
         ]
 
         for _, mri_row in mri_rows.iterrows():
