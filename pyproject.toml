@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name =  "pylantir"
-version = "0.1.1"
+version = "0.1.2"
 authors = [
     {name = "Milton Camacho", email = "miltoncamachoicc@gmail.com"},
 ]
