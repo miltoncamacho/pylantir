@@ -241,7 +241,7 @@ def sync_redcap_to_db_repeatedly(
 
     # last_sync_date = datetime.now().date()
     last_sync_date = datetime.now().date() - timedelta(days=1)
-    interval_sync = interval + 600 # add 10 minutes to the interval to overlap with the previous sync and avoid missing data
+    interval_sync = interval + 300 # add 5 minutes to the interval to overlap with the previous sync and avoid missing data
 
     while not STOP_EVENT.is_set():
         # === 1) BASELINE: set defaults for flags and wait-time each iteration ===
