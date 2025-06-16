@@ -271,7 +271,7 @@ def sync_redcap_to_db_repeatedly(
                 logging.info(f"Using extended interval: {extended_interval}, {interval} seconds until next sync.")
             else:
                 # Either not first run, or last_sync_date is None (this is first-ever run)
-                logging.info("Using default interval {interval} seconds.")
+                logging.info(f"Using default interval {interval} seconds.")
 
             # --- CALL THE SYNC FUNCTION INSIDE A TRY/EXCEPT ---
             logging.debug(f"Syncing REDCap to DB for site {site_id} at {now_time}.")
