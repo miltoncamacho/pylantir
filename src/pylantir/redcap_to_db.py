@@ -192,7 +192,7 @@ def sync_redcap_to_db(
             # existing_entry.study_description = record.get("study_description")
             # existing_entry.station_name = record.get("station_name")
         else:
-            logging.debug(f"Adding new worklist entry for PatientID {PatientID}")
+            logging.info(f"Adding new worklist entry for PatientID {PatientID} scheduled for {record.get('mri_date')} at {record.get('mri_time')}")
             new_entry = WorklistItem(
                 study_instance_uid=generate_instance_uid(),
                 patient_name=PatientName,
