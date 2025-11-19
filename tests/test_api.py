@@ -218,7 +218,7 @@ class TestPylantirAPI:
     def test_get_worklist_unauthorized(self, test_client):
         """Test accessing worklist without authentication."""
         response = test_client.get("/worklist")
-        assert response.status_code == 401
+        assert response.status_code == 403  # FastAPI HTTPBearer returns 403 when no credentials provided
     
     def test_get_worklist_authorized(self, test_client, admin_user, sample_worklist_item):
         """Test accessing worklist with authentication."""

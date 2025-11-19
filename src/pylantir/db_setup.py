@@ -44,3 +44,16 @@ Base.metadata.create_all(engine)
 
 # Session factory
 Session = sessionmaker(bind=engine)
+
+def get_db():
+    """
+    FastAPI dependency to get database session.
+    
+    Yields:
+        Session: SQLAlchemy database session
+    """
+    db = Session()
+    try:
+        yield db
+    finally:
+        db.close()
