@@ -229,8 +229,14 @@ pylantir admin-password --username admin
 ```bash
 curl -X POST "http://localhost:8000/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "your_new_password"}'
+  -d '{
+    "username": "admin",
+    "password": "your_new_password",
+    "access_token_expire_minutes": 60
+  }'
 ```
+
+You can optionally send `access_token_expire_minutes` in the login payload to override the default TTL that is applied to newly minted tokens.
 
 Response:
 ```json
@@ -312,7 +318,8 @@ import requests
 # Login
 response = requests.post("http://localhost:8000/auth/login", json={
     "username": "admin",
-    "password": "your_password"
+  "password": "your_password",
+  "access_token_expire_minutes": 120
 })
 token = response.json()["access_token"]
 

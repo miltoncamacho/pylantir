@@ -16,6 +16,8 @@ import os
 from typing import Dict, Any
 from datetime import datetime
 
+from jose import jwt
+
 # Only run these tests if API dependencies are available
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
@@ -26,7 +28,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.pylantir.api_server import app, get_current_user, get_auth_db
 from src.pylantir.auth_models import AuthBase, User, UserRole
-from src.pylantir.auth_utils import get_password_hash
+from src.pylantir.auth_utils import get_password_hash, SECRET_KEY, ALGORITHM
 from src.pylantir.models import Base, WorklistItem
 from src.pylantir.db_setup import get_api_db
 
@@ -204,6 +206,31 @@ class TestPylantirAPI:
         data = response.json()
         assert "access_token" in data
         assert data["token_type"] == "bearer"
+
+    def test_login_custom_expiration(self, test_client, admin_user):
+        """Test login with custom token expiration."""
+        expire_minutes = 10
+        response = test_client.post("/auth/login", json={
+            "username": "testadmin",
+            "password": "testpassword123",
+            "access_token_expire_minutes": expire_minutes
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        token = data["access_token"]
+
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"verify_exp": False}
+        )
+
+        exp_timestamp = payload.get("exp")
+        assert exp_timestamp is not None
+        expires_in = (datetime.utcfromtimestamp(exp_timestamp) - datetime.utcnow()).total_seconds()
+        assert abs(expires_in - expire_minutes * 60) < 20
     
     def test_login_invalid_credentials(self, test_client):
         """Test login with invalid credentials."""

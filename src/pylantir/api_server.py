@@ -263,6 +263,13 @@ class LoginRequest(BaseModel):
     """Login request model."""
     username: str
     password: str
+    access_token_expire_minutes: Optional[int] = None
+
+    @validator('access_token_expire_minutes')
+    def validate_expiry_minutes(cls, v):
+        if v is not None and v <= 0:
+            raise ValueError('access_token_expire_minutes must be a positive integer')
+        return v
 
 
 # Authentication dependency
@@ -362,7 +369,14 @@ async def login(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        access_token = create_access_token(data={"sub": user.username})
+        expires_delta = None
+        if login_data.access_token_expire_minutes is not None:
+            expires_delta = timedelta(minutes=login_data.access_token_expire_minutes)
+
+        access_token = create_access_token(
+            data={"sub": user.username},
+            expires_delta=expires_delta
+        )
 
         lgr.info(f"User {user.username} logged in successfully")
 
