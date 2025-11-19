@@ -4,7 +4,7 @@
     Author: Milton Camacho
     Date: 2025-11-18
     FastAPI application for Pylantir worklist management.
-    
+
     Provides RESTful API endpoints for:
     - GET /worklist: Retrieve worklist items with optional filtering
     - POST /worklist: Create new worklist items
@@ -32,6 +32,8 @@ except ImportError:
 
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
+import os
+import json
 
 from .db_setup import get_api_db
 from .db_concurrency import ConcurrencyManager, safe_database_transaction, DatabaseBusyError
@@ -39,15 +41,61 @@ from .auth_db_setup import get_auth_db, init_auth_database, create_initial_admin
 from .models import WorklistItem
 from .auth_models import User, UserRole
 from .auth_utils import (
-    authenticate_user, 
-    create_access_token, 
-    verify_token, 
+    authenticate_user,
+    create_access_token,
+    verify_token,
     get_password_hash,
     AuthenticationError,
     AuthorizationError
 )
 
 lgr = logging.getLogger(__name__)
+
+
+def get_cors_config():
+    """
+    Get CORS configuration from environment variables set by CLI.
+
+    Returns:
+        dict: CORS configuration with defaults for security
+    """
+    # Default secure CORS configuration
+    cors_config = {
+        "allow_origins": ["http://localhost:3000", "http://localhost:8080"],
+        "allow_credentials": True,
+        "allow_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["*"],
+    }
+
+    # Load from environment variables if set by CLI
+    cors_origins = os.getenv("CORS_ALLOWED_ORIGINS")
+    if cors_origins:
+        try:
+            # Parse JSON array from environment variable
+            cors_config["allow_origins"] = json.loads(cors_origins)
+        except json.JSONDecodeError:
+            lgr.warning(f"Invalid CORS origins format: {cors_origins}, using defaults")
+
+    cors_credentials = os.getenv("CORS_ALLOW_CREDENTIALS")
+    if cors_credentials:
+        cors_config["allow_credentials"] = cors_credentials.lower() in ("true", "1")
+
+    cors_methods = os.getenv("CORS_ALLOW_METHODS")
+    if cors_methods:
+        try:
+            cors_config["allow_methods"] = json.loads(cors_methods)
+        except json.JSONDecodeError:
+            lgr.warning(f"Invalid CORS methods format: {cors_methods}, using defaults")
+
+    cors_headers = os.getenv("CORS_ALLOW_HEADERS")
+    if cors_headers:
+        try:
+            cors_config["allow_headers"] = json.loads(cors_headers)
+        except json.JSONDecodeError:
+            lgr.warning(f"Invalid CORS headers format: {cors_headers}, using defaults")
+
+    return cors_config
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -58,14 +106,17 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# CORS middleware
+# CORS middleware with configurable origins
+cors_config = get_cors_config()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_config["allow_origins"],
+    allow_credentials=cors_config["allow_credentials"],
+    allow_methods=cors_config["allow_methods"],
+    allow_headers=cors_config["allow_headers"],
 )
+
+lgr.info(f"CORS configured with origins: {cors_config['allow_origins']}")
 
 # Security
 security = HTTPBearer()
@@ -221,28 +272,28 @@ async def get_current_user(
 ) -> User:
     """
     Get current authenticated user from JWT token.
-    
+
     Args:
         credentials: HTTP Authorization credentials
         auth_db: Authentication database session
-        
+
     Returns:
         User: Authenticated user object
-        
+
     Raises:
         HTTPException: If authentication fails
     """
     try:
         token = credentials.credentials
         payload = verify_token(token)
-        
+
         if payload is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
         username = payload.get("sub")
         if username is None:
             raise HTTPException(
@@ -250,7 +301,7 @@ async def get_current_user(
                 detail="Invalid token payload",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
         user = auth_db.query(User).filter(User.username == username).first()
         if user is None or not user.is_active:
             raise HTTPException(
@@ -258,9 +309,9 @@ async def get_current_user(
                 detail="User not found or inactive",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
         return user
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -275,11 +326,11 @@ async def get_current_user(
 def require_permission(action: str, resource: str = "worklist"):
     """
     Dependency factory for permission checking.
-    
+
     Args:
         action: Required action permission
         resource: Resource type
-        
+
     Returns:
         Dependency function
     """
@@ -290,7 +341,7 @@ def require_permission(action: str, resource: str = "worklist"):
                 detail=f"Insufficient permissions for {action} on {resource}"
             )
         return current_user
-    
+
     return permission_checker
 
 
@@ -303,23 +354,23 @@ async def login(
     """Authenticate user and return access token."""
     try:
         user = authenticate_user(auth_db, login_data.username, login_data.password)
-        
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid username or password",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
+
         access_token = create_access_token(data={"sub": user.username})
-        
+
         lgr.info(f"User {user.username} logged in successfully")
-        
+
         return {
             "access_token": access_token,
             "token_type": "bearer"
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -346,29 +397,29 @@ async def get_worklist_items(
 ):
     """
     Get worklist items with optional filtering.
-    
+
     Requires: read permission on worklist
     """
     try:
         query = db.query(WorklistItem)
-        
+
         # Apply filters
         if status:
             query = query.filter(WorklistItem.performed_procedure_step_status.in_(status))
-        
+
         if patient_id:
             query = query.filter(WorklistItem.patient_id.ilike(f"%{patient_id}%"))
-            
+
         if modality:
             query = query.filter(WorklistItem.modality == modality)
-        
+
         # Apply pagination
         items = query.offset(offset).limit(limit).all()
-        
+
         lgr.info(f"User {current_user.username} retrieved {len(items)} worklist items")
-        
+
         return items
-        
+
     except Exception as e:
         lgr.error(f"Error retrieving worklist items: {e}")
         raise HTTPException(
@@ -385,7 +436,7 @@ async def create_worklist_item(
 ):
     """
     Create a new worklist item.
-    
+
     Requires: write permission on worklist
     """
     try:
@@ -393,18 +444,18 @@ async def create_worklist_item(
         if not item_data.study_instance_uid:
             import uuid
             item_data.study_instance_uid = f"1.2.840.10008.3.1.2.3.4.{uuid.uuid4().int}"
-        
+
         # Create database object
         db_item = WorklistItem(**item_data.dict())
-        
+
         db.add(db_item)
         db.commit()
         db.refresh(db_item)
-        
+
         lgr.info(f"User {current_user.username} created worklist item {db_item.id}")
-        
+
         return db_item
-        
+
     except Exception as e:
         lgr.error(f"Error creating worklist item: {e}")
         db.rollback()
@@ -423,30 +474,30 @@ async def update_worklist_item(
 ):
     """
     Update an existing worklist item.
-    
+
     Requires: write permission on worklist
     """
     try:
         db_item = db.query(WorklistItem).filter(WorklistItem.id == item_id).first()
-        
+
         if not db_item:
             raise HTTPException(
                 status_code=404,
                 detail=f"Worklist item {item_id} not found"
             )
-        
+
         # Update fields that are provided
         update_data = item_data.dict(exclude_unset=True)
         for field, value in update_data.items():
             setattr(db_item, field, value)
-        
+
         db.commit()
         db.refresh(db_item)
-        
+
         lgr.info(f"User {current_user.username} updated worklist item {item_id}")
-        
+
         return db_item
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -466,25 +517,25 @@ async def delete_worklist_item(
 ):
     """
     Delete a worklist item.
-    
+
     Requires: write permission on worklist
     """
     try:
         db_item = db.query(WorklistItem).filter(WorklistItem.id == item_id).first()
-        
+
         if not db_item:
             raise HTTPException(
                 status_code=404,
                 detail=f"Worklist item {item_id} not found"
             )
-        
+
         db.delete(db_item)
         db.commit()
-        
+
         lgr.info(f"User {current_user.username} deleted worklist item {item_id}")
-        
+
         return {"message": f"Worklist item {item_id} deleted successfully"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -504,16 +555,16 @@ async def get_users(
 ):
     """
     Get list of all users.
-    
+
     Requires: admin role
     """
     try:
         users = auth_db.query(User).all()
-        
+
         lgr.info(f"Admin {current_user.username} retrieved user list")
-        
+
         return users
-        
+
     except Exception as e:
         lgr.error(f"Error retrieving users: {e}")
         raise HTTPException(
@@ -530,7 +581,7 @@ async def create_user(
 ):
     """
     Create a new user.
-    
+
     Requires: admin role
     """
     try:
@@ -541,10 +592,10 @@ async def create_user(
                 status_code=400,
                 detail="Username already exists"
             )
-        
+
         # Hash password
         hashed_password = get_password_hash(user_data.password)
-        
+
         # Create user
         db_user = User(
             username=user_data.username,
@@ -556,15 +607,15 @@ async def create_user(
             created_at=datetime.utcnow(),
             created_by=current_user.id
         )
-        
+
         auth_db.add(db_user)
         auth_db.commit()
         auth_db.refresh(db_user)
-        
+
         lgr.info(f"Admin {current_user.username} created user {db_user.username}")
-        
+
         return db_user
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -585,39 +636,39 @@ async def update_user(
 ):
     """
     Update an existing user.
-    
+
     Requires: admin role
     """
     try:
         db_user = auth_db.query(User).filter(User.id == user_id).first()
-        
+
         if not db_user:
             raise HTTPException(
                 status_code=404,
                 detail=f"User {user_id} not found"
             )
-        
+
         # Update fields that are provided
         update_data = user_data.dict(exclude_unset=True)
-        
+
         # Handle password hashing separately
         if 'password' in update_data:
             update_data['hashed_password'] = get_password_hash(update_data.pop('password'))
-        
+
         # Handle role conversion
         if 'role' in update_data:
             update_data['role'] = UserRole(update_data['role'])
-        
+
         for field, value in update_data.items():
             setattr(db_user, field, value)
-        
+
         auth_db.commit()
         auth_db.refresh(db_user)
-        
+
         lgr.info(f"Admin {current_user.username} updated user {db_user.username}")
-        
+
         return db_user
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -637,7 +688,7 @@ async def delete_user(
 ):
     """
     Delete a user.
-    
+
     Requires: admin role
     """
     try:
@@ -646,22 +697,22 @@ async def delete_user(
                 status_code=400,
                 detail="Cannot delete your own account"
             )
-        
+
         db_user = auth_db.query(User).filter(User.id == user_id).first()
-        
+
         if not db_user:
             raise HTTPException(
                 status_code=404,
                 detail=f"User {user_id} not found"
             )
-        
+
         auth_db.delete(db_user)
         auth_db.commit()
-        
+
         lgr.info(f"Admin {current_user.username} deleted user {db_user.username}")
-        
+
         return {"message": f"User {db_user.username} deleted successfully"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -689,7 +740,7 @@ async def startup_event():
         # This will work when started via CLI, but fallback gracefully for direct API startup
         import os
         users_db_path = os.getenv("USERS_DB_PATH")  # Set by CLI when config is loaded
-        
+
         init_auth_database(users_db_path)
         create_initial_admin_user(users_db_path)
         lgr.info("Pylantir API server started successfully")

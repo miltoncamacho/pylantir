@@ -188,7 +188,7 @@ The API uses JWT (JSON Web Token) authentication with role-based access control:
 
 #### User Roles:
 - **admin**: Full access to users and worklist data (CRUD operations)
-- **write**: Read and write access to worklist data only  
+- **write**: Read and write access to worklist data only
 - **read**: Read-only access to worklist data only
 
 #### Initial Setup:
@@ -215,7 +215,7 @@ pylantir admin-password --username admin
 
 #### User Management (Admin Only)
 - `GET /users`: List all users
-- `POST /users`: Create new users  
+- `POST /users`: Create new users
 - `PUT /users/{id}`: Update users
 - `DELETE /users/{id}`: Delete users
 
@@ -264,7 +264,7 @@ curl -X POST "http://localhost:8000/worklist" \
   -H "Content-Type: application/json" \
   -d '{
     "patient_name": "Doe^John",
-    "patient_id": "PATIENT001", 
+    "patient_id": "PATIENT001",
     "patient_birth_date": "19900101",
     "patient_sex": "M",
     "modality": "MR",
@@ -330,7 +330,7 @@ new_item = {
     "modality": "CT",
     "performed_procedure_step_status": "SCHEDULED"
 }
-response = requests.post("http://localhost:8000/worklist", 
+response = requests.post("http://localhost:8000/worklist",
                         json=new_item, headers=headers)
 ```
 
@@ -368,7 +368,7 @@ The API server uses the same configuration file as the main DICOM server for dat
 
 #### Configuration Precedence:
 1. `users_db_path` in configuration JSON file
-2. `USERS_DB_PATH` environment variable  
+2. `USERS_DB_PATH` environment variable
 3. Default: `users.db` in same directory as main database
 
 Example directory structures:
@@ -389,10 +389,71 @@ Example directory structures:
 └── authentication.db # API authentication database (custom path)
 ```
 
+#### CORS Configuration
+
+Control Cross-Origin Resource Sharing (CORS) for web frontend integration:
+
+```json
+{
+  "db_path": "/path/to/worklist.db",
+  "api": {
+    "cors_allowed_origins": [
+      "http://localhost:3000",
+      "http://localhost:8080",
+      "https://radiology-dashboard.hospital.local",
+      "https://your-frontend-domain.com"
+    ],
+    "cors_allow_credentials": true,
+    "cors_allow_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    "cors_allow_headers": ["*"]
+  }
+}
+```
+
+**CORS Configuration Options:**
+
+- **`cors_allowed_origins`**: Array of allowed origin URLs for browser requests
+  - Use specific domains for security (avoid `["*"]` in production)
+  - Include all frontend application URLs that will access the API
+  - Supports both HTTP (development) and HTTPS (production) origins
+
+- **`cors_allow_credentials`**: Boolean, allows cookies/auth headers in CORS requests
+  - Set to `true` for JWT token authentication (recommended)
+  - Required for browser-based authentication
+
+- **`cors_allow_methods`**: Array of allowed HTTP methods
+  - Default: `["GET", "POST", "PUT", "DELETE", "OPTIONS"]`
+  - Include `"OPTIONS"` for preflight requests
+
+- **`cors_allow_headers`**: Array of allowed request headers
+  - Default: `["*"]` allows all headers
+  - Can specify specific headers like `["Authorization", "Content-Type"]`
+
+**CORS Security Best Practices:**
+- Never use `["*"]` for origins in production environments
+- Specify only the exact domains that need API access
+- Use HTTPS origins for production deployments
+- Regularly audit and update allowed origins list
+
+**Example Production CORS Setup:**
+```json
+{
+  "api": {
+    "cors_allowed_origins": [
+      "https://radiology.hospital.com",
+      "https://dashboard.hospital.com"
+    ],
+    "cors_allow_credentials": true,
+    "cors_allow_methods": ["GET", "POST", "PUT", "DELETE"],
+    "cors_allow_headers": ["Authorization", "Content-Type"]
+  }
+}
+```
+
 ### Security Considerations
 
 - **Change Default Password**: Always change the default admin password
-- **Use HTTPS**: In production, use HTTPS with proper SSL certificates  
+- **Use HTTPS**: In production, use HTTPS with proper SSL certificates
 - **Network Security**: Restrict API access using firewalls/network policies
 - **Token Management**: JWT tokens expire after 30 minutes by default
 - **Database Permissions**: Ensure database files have appropriate file permissions

@@ -1,8 +1,12 @@
 {
     "db_path": "/path/to/worklist.db",
+    "users_db_path": "/path/to/users.db",
     "db_echo": "0",
     "db_update_interval": 60,
-    "allowed_aet": [],
+    "allowed_aet": [
+        "MRI_SCANNER",
+        "CT_SCANNER"
+    ],
     "operation_interval": {
         "start_time": [
             0,
@@ -37,10 +41,14 @@
         "792": "BRAIN_MRI_3T"
     },
     "api": {
+        "host": "0.0.0.0",
+        "port": 8000,
+        "secret_key": "your-secure-secret-key-here",
         "cors_allowed_origins": [
             "http://localhost:3000",
             "http://localhost:8080",
-            "https://your-frontend-domain.com"
+            "https://your-frontend-domain.com",
+            "https://radiology-dashboard.hospital.local"
         ],
         "cors_allow_credentials": true,
         "cors_allow_methods": [

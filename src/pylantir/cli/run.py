@@ -47,7 +47,7 @@ def parse_args():
                         - create-user: create a new user (admin only)
                         - list-users: list all users (admin only)
                     """,
-                    choices=["start", "query-db", "test-client", "test-mpps", 
+                    choices=["start", "query-db", "test-client", "test-mpps",
                             "start-api", "admin-password", "create-user", "list-users"],
                     )
     p.add_argument("--AEtitle", help="AE Title for the server")
@@ -106,7 +106,7 @@ def parse_args():
 
     # API server arguments
     p.add_argument(
-        "--api-host", 
+        "--api-host",
         default="0.0.0.0",
         type=str,
         help="API server host address (default: 0.0.0.0)"
@@ -212,16 +212,17 @@ def run_test_script(script_name, **kwargs):
     else:
         lgr.error(f"Test script {script_name} does not have a 'main' function.")
 
-def update_env_with_config(db_path="~/Desktop/worklist.db", db_echo="False", users_db_path=None, env_path=".env"):
+def update_env_with_config(config):
     """
-    Updates db_path and users_db_path from the config to environment variables in .env.
-    
+    Updates environment variables from configuration.
+
     Args:
-        db_path: Path to main worklist database
-        db_echo: Database echo setting
-        users_db_path: Optional path to users authentication database
-        env_path: Path to .env file
+        config: Configuration dictionary
     """
+    # Extract values from config with defaults
+    db_path = config.get("db_path", "~/Desktop/worklist.db")
+    db_echo = str(config.get("db_echo", "False"))
+    users_db_path = config.get("users_db_path")
 
     # Expand the db_path from the config
     try:
@@ -230,24 +231,38 @@ def update_env_with_config(db_path="~/Desktop/worklist.db", db_echo="False", use
         lgr.error("Invalid db_path in config.")
         return
 
-    # Set the default env_path to the src/pylantir folder
-    dot_env_path = pkg_resources.files("pylantir").joinpath(env_path)
-    dot_env_path = Path.Path(dot_env_path)
+    # Set environment variables directly (for API server)
+    os.environ["DB_PATH"] = db_path_expanded
+    os.environ["DB_ECHO"] = db_echo
 
-    # Write to .env using python-dotenv's set_key
-    set_key(dot_env_path, "DB_PATH", db_path_expanded)
-    set_key(dot_env_path, "DB_ECHO", db_echo)
-    
     # Set users database path if provided in config
     if users_db_path:
         try:
             users_db_path_expanded = os.path.expanduser(users_db_path)
-            set_key(dot_env_path, "USERS_DB_PATH", users_db_path_expanded)
+            os.environ["USERS_DB_PATH"] = users_db_path_expanded
             lgr.debug(f"USERS_DB_PATH set to {users_db_path_expanded}")
         except AttributeError:
             lgr.error("Invalid users_db_path in config.")
 
-    lgr.debug(f"DB_PATH set to {db_path_expanded} and DB_ECHO to {db_echo} in {dot_env_path}")
+    # Set CORS configuration if provided
+    api_config = config.get("api", {})
+    if "cors_allowed_origins" in api_config:
+        import json
+        os.environ["CORS_ALLOWED_ORIGINS"] = json.dumps(api_config["cors_allowed_origins"])
+        lgr.debug(f"CORS origins set to {api_config['cors_allowed_origins']}")
+
+    if "cors_allow_credentials" in api_config:
+        os.environ["CORS_ALLOW_CREDENTIALS"] = str(api_config["cors_allow_credentials"])
+
+    if "cors_allow_methods" in api_config:
+        import json
+        os.environ["CORS_ALLOW_METHODS"] = json.dumps(api_config["cors_allow_methods"])
+
+    if "cors_allow_headers" in api_config:
+        import json
+        os.environ["CORS_ALLOW_HEADERS"] = json.dumps(api_config["cors_allow_headers"])
+
+    lgr.debug(f"Environment configured: DB_PATH={db_path_expanded}, DB_ECHO={db_echo}")
 
 def main() -> None:
     args = parse_args()
@@ -267,12 +282,8 @@ def main() -> None:
     if (args.command == "start"):
         # Load configuration (either user-specified or default)
         config = load_config(args.pylantir_config)
-        # Extract the database path (default to worklist.db if missing) &
-        # Extract the database echo setting (default to False if missing)
-        db_path = config.get("db_path", "./worklist.db")
-        db_echo = config.get("db_echo", "False")
-        users_db_path = config.get("users_db_path")  # Optional users database path
-        update_env_with_config(db_path=db_path, db_echo=db_echo, users_db_path=users_db_path)
+        # Load configuration into environment variables
+        update_env_with_config(config)
 
 
         from ..mwl_server import run_mwl_server
@@ -365,25 +376,23 @@ def main() -> None:
             import uvicorn
             from ..api_server import app
             from ..auth_db_setup import init_auth_database, create_initial_admin_user
-            
+
             # Load configuration for database setup
             config = load_config(args.pylantir_config)
-            db_path = config.get("db_path", "./worklist.db")
-            db_echo = config.get("db_echo", "False")
+            update_env_with_config(config)
             users_db_path = config.get("users_db_path")  # Optional users database path
-            update_env_with_config(db_path=db_path, db_echo=db_echo, users_db_path=users_db_path)
-            
+
             # Initialize authentication database with configured path
             init_auth_database(users_db_path)
             create_initial_admin_user(users_db_path)
-            
+
             lgr.info(f"API server starting on {args.api_host}:{args.api_port}")
             lgr.info("API documentation available at /docs")
             lgr.info("Default admin credentials: username='admin', password='admin123'")
             lgr.warning("Change the admin password immediately using 'pylantir admin-password'")
-            
+
             uvicorn.run(app, host=args.api_host, port=args.api_port)
-            
+
         except ImportError:
             lgr.error("API dependencies not installed. Install with: pip install pylantir[api]")
             sys.exit(1)
@@ -398,50 +407,50 @@ def main() -> None:
             from ..auth_models import User, UserRole
             from ..auth_utils import get_password_hash
             import getpass
-            
+
             # Load configuration to get users_db_path if available
             config = load_config(args.pylantir_config) if hasattr(args, 'pylantir_config') and args.pylantir_config else {}
             users_db_path = config.get("users_db_path")
-            
+
             # Initialize database
             init_auth_database(users_db_path)
-            
+
             # Get current password
             current_password = getpass.getpass("Enter current admin password: ")
-            
+
             # Get new password
             new_password = getpass.getpass("Enter new password: ")
             confirm_password = getpass.getpass("Confirm new password: ")
-            
+
             if new_password != confirm_password:
                 lgr.error("Passwords do not match")
                 sys.exit(1)
-            
+
             if len(new_password) < 8:
                 lgr.error("Password must be at least 8 characters long")
                 sys.exit(1)
-            
+
             # Update password in database
             db = next(get_auth_db())
             admin_user = db.query(User).filter(
                 User.username == (args.username or "admin")
             ).first()
-            
+
             if not admin_user:
                 lgr.error("Admin user not found")
                 sys.exit(1)
-                
+
             from ..auth_utils import verify_password
             if not verify_password(current_password, admin_user.hashed_password):
                 lgr.error("Current password is incorrect")
                 sys.exit(1)
-            
+
             # Update password
             admin_user.hashed_password = get_password_hash(new_password)
             db.commit()
-            
+
             lgr.info("Admin password updated successfully")
-            
+
         except ImportError:
             lgr.error("API dependencies not installed. Install with: pip install pylantir[api]")
             sys.exit(1)
@@ -456,44 +465,44 @@ def main() -> None:
             from ..auth_models import User, UserRole
             from ..auth_utils import get_password_hash
             import getpass
-            
+
             # Load configuration to get users_db_path if available
             config = load_config(args.pylantir_config) if hasattr(args, 'pylantir_config') and args.pylantir_config else {}
             users_db_path = config.get("users_db_path")
-            
+
             # Initialize database
             init_auth_database(users_db_path)
-            
+
             # Get admin credentials
             admin_username = input("Enter admin username: ") or "admin"
             admin_password = getpass.getpass("Enter admin password: ")
-            
+
             # Get new user details
             username = args.username or input("Enter new username: ")
             email = args.email or input("Enter email (optional): ") or None
             full_name = args.full_name or input("Enter full name (optional): ") or None
             password = args.password or getpass.getpass("Enter password for new user: ")
             role = args.role
-            
+
             if not username or not password:
                 lgr.error("Username and password are required")
                 sys.exit(1)
-            
+
             # Verify admin credentials
             db = next(get_auth_db())
             from ..auth_utils import authenticate_user
             admin_user = authenticate_user(db, admin_username, admin_password)
-            
+
             if not admin_user or admin_user.role != UserRole.ADMIN:
                 lgr.error("Invalid admin credentials or insufficient permissions")
                 sys.exit(1)
-            
+
             # Check if username already exists
             existing_user = db.query(User).filter(User.username == username).first()
             if existing_user:
                 lgr.error(f"Username '{username}' already exists")
                 sys.exit(1)
-            
+
             # Create new user
             from datetime import datetime
             new_user = User(
@@ -506,12 +515,12 @@ def main() -> None:
                 created_at=datetime.utcnow(),
                 created_by=admin_user.id
             )
-            
+
             db.add(new_user)
             db.commit()
-            
+
             lgr.info(f"User '{username}' created successfully with role '{role}'")
-            
+
         except ImportError:
             lgr.error("API dependencies not installed. Install with: pip install pylantir[api]")
             sys.exit(1)
@@ -525,41 +534,41 @@ def main() -> None:
             from ..auth_db_setup import get_auth_db, init_auth_database
             from ..auth_models import User, UserRole
             import getpass
-            
+
             # Load configuration to get users_db_path if available
             config = load_config(args.pylantir_config) if hasattr(args, 'pylantir_config') and args.pylantir_config else {}
             users_db_path = config.get("users_db_path")
-            
+
             # Initialize database
             init_auth_database(users_db_path)
-            
+
             # Get admin credentials
             admin_username = input("Enter admin username: ") or "admin"
             admin_password = getpass.getpass("Enter admin password: ")
-            
+
             # Verify admin credentials
             db = next(get_auth_db())
             from ..auth_utils import authenticate_user
             admin_user = authenticate_user(db, admin_username, admin_password)
-            
+
             if not admin_user or admin_user.role != UserRole.ADMIN:
                 lgr.error("Invalid admin credentials or insufficient permissions")
                 sys.exit(1)
-            
+
             # List all users
             users = db.query(User).all()
-            
+
             print("\nUsers:")
             print("=" * 80)
             print(f"{'ID':<5} {'Username':<20} {'Role':<10} {'Active':<8} {'Email':<25} {'Last Login'}")
             print("-" * 80)
-            
+
             for user in users:
                 last_login = user.last_login.strftime("%Y-%m-%d %H:%M") if user.last_login else "Never"
                 print(f"{user.id:<5} {user.username:<20} {user.role.value:<10} {user.is_active:<8} {user.email or 'N/A':<25} {last_login}")
-            
+
             print(f"\nTotal users: {len(users)}")
-            
+
         except ImportError:
             lgr.error("API dependencies not installed. Install with: pip install pylantir[api]")
             sys.exit(1)
