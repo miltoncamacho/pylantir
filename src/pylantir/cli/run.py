@@ -482,7 +482,23 @@ def main() -> None:
             email = args.email or input("Enter email (optional): ") or None
             full_name = args.full_name or input("Enter full name (optional): ") or None
             password = args.password or getpass.getpass("Enter password for new user: ")
-            role = args.role
+            
+            # Get user role with interactive prompt
+            if args.role == "read":  # Default value, prompt for role
+                print("\nAvailable user roles:")
+                print("  admin - Full administrative access")
+                print("  write - Can create, read, update, and delete records")
+                print("  read  - Read-only access (default)")
+                role_input = input("Enter user role (admin/write/read) [read]: ").lower().strip()
+                if role_input in ["admin", "write", "read"]:
+                    role = role_input
+                elif role_input == "":
+                    role = "read"  # Keep default
+                else:
+                    lgr.error(f"Invalid role '{role_input}'. Valid roles are: admin, write, read")
+                    sys.exit(1)
+            else:
+                role = args.role
 
             if not username or not password:
                 lgr.error("Username and password are required")
