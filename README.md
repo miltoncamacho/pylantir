@@ -80,11 +80,15 @@ usage: pylantir [-h] [--AEtitle AETITLE] [--ip IP] [--port PORT] [--pylantir_con
 
 ### Positional Arguments:
 
-- **{start,query-db,test-client,test-mpps}**: Command to run:
+- **{start,query-db,test-client,test-mpps,start-api,admin-password,create-user,list-users}**: Command to run:
   - **start**: Start the MWL server
   - **query-db**: Query the MWL database
   - **test-client**: Run tests for MWL
   - **test-mpps**: Run tests for MPPS
+  - **start-api**: Start the FastAPI server (requires [api] dependencies)
+  - **admin-password**: Change admin password
+  - **create-user**: Create a new user (admin only)
+  - **list-users**: List all users (admin only)
 
 ### Options:
 
@@ -140,6 +144,214 @@ As a default pylantir will try to read a JSON structured file with the following
 }
 ```
 
+## FastAPI REST API (Optional)
+
+**New in v0.2.0**: Pylantir now includes an optional REST API for programmatic access to worklist data and user management.
+
+### Installation with API Support
+
+To use the API features, install with optional API dependencies:
+
+```bash
+pip install pylantir[api]
+```
+
+This installs additional dependencies:
+- `fastapi>=0.104.1`: Modern web framework for building APIs
+- `uvicorn[standard]>=0.24.0`: ASGI server for running FastAPI
+- `passlib[bcrypt]==1.7.4`: Password hashing library
+- `bcrypt==4.0.1`: Bcrypt hashing algorithm
+- `python-jose[cryptography]==3.5.0`: JWT token handling
+- `python-multipart>=0.0.6`: Form data parsing
+
+### Starting the API Server
+
+```bash
+# Start API server on default port (8000)
+pylantir start-api --api-host 0.0.0.0 --api-port 8000
+
+# With custom configuration
+pylantir start-api --pylantir_config /path/to/config.json --api-port 8080
+```
+
+The API server will be available at:
+- **API Endpoints**: `http://localhost:8000`
+- **Interactive Documentation**: `http://localhost:8000/docs` (Swagger UI)
+- **Alternative Documentation**: `http://localhost:8000/redoc` (ReDoc)
+
+### Authentication & Authorization
+
+The API uses JWT (JSON Web Token) authentication with role-based access control:
+
+#### User Roles:
+- **admin**: Full access to users and worklist data (CRUD operations)
+- **write**: Read and write access to worklist data only  
+- **read**: Read-only access to worklist data only
+
+#### Initial Setup:
+On first run, a default admin user is created:
+- **Username**: `admin`
+- **Password**: `admin123`
+
+⚠️ **Change the default password immediately:**
+
+```bash
+pylantir admin-password --username admin
+```
+
+### API Endpoints
+
+#### Authentication
+- `POST /auth/login`: Authenticate and receive JWT token
+
+#### Worklist Management
+- `GET /worklist`: Retrieve worklist items with filtering
+- `POST /worklist`: Create new worklist items (write/admin)
+- `PUT /worklist/{id}`: Update worklist items (write/admin)
+- `DELETE /worklist/{id}`: Delete worklist items (write/admin)
+
+#### User Management (Admin Only)
+- `GET /users`: List all users
+- `POST /users`: Create new users  
+- `PUT /users/{id}`: Update users
+- `DELETE /users/{id}`: Delete users
+
+#### Health Check
+- `GET /health`: API health status
+
+### API Usage Examples
+
+#### 1. Login and Get Token
+
+```bash
+curl -X POST "http://localhost:8000/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "your_new_password"}'
+```
+
+Response:
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer"
+}
+```
+
+#### 2. Get Worklist Items
+
+```bash
+# Get all scheduled and in-progress items (default)
+curl -X GET "http://localhost:8000/worklist" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Filter by specific status
+curl -X GET "http://localhost:8000/worklist?status=SCHEDULED&status=COMPLETED" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Filter by patient ID
+curl -X GET "http://localhost:8000/worklist?patient_id=PATIENT001" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+#### 3. Create Worklist Item
+
+```bash
+curl -X POST "http://localhost:8000/worklist" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "patient_name": "Doe^John",
+    "patient_id": "PATIENT001", 
+    "patient_birth_date": "19900101",
+    "patient_sex": "M",
+    "modality": "MR",
+    "performed_procedure_step_status": "SCHEDULED"
+  }'
+```
+
+#### 4. Update Procedure Status
+
+```bash
+curl -X PUT "http://localhost:8000/worklist/1" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"performed_procedure_step_status": "IN_PROGRESS"}'
+```
+
+### CLI User Management
+
+#### Change Admin Password
+
+```bash
+pylantir admin-password --username admin
+# Prompts for current and new password
+```
+
+#### Create New User
+
+```bash
+pylantir create-user --username newuser --role write --email user@example.com
+# Prompts for admin credentials and new user password
+```
+
+#### List Users
+
+```bash
+pylantir list-users
+# Prompts for admin credentials, then displays user table
+```
+
+### Python Client Example
+
+```python
+import requests
+
+# Login
+response = requests.post("http://localhost:8000/auth/login", json={
+    "username": "admin",
+    "password": "your_password"
+})
+token = response.json()["access_token"]
+
+# Set headers for authenticated requests
+headers = {"Authorization": f"Bearer {token}"}
+
+# Get worklist items
+response = requests.get("http://localhost:8000/worklist", headers=headers)
+worklist_items = response.json()
+
+# Create new item
+new_item = {
+    "patient_name": "Smith^Jane",
+    "patient_id": "PATIENT002",
+    "modality": "CT",
+    "performed_procedure_step_status": "SCHEDULED"
+}
+response = requests.post("http://localhost:8000/worklist", 
+                        json=new_item, headers=headers)
+```
+
+### API Configuration
+
+The API server uses the same configuration file as the main DICOM server for database settings. The separate users database is automatically created in the same directory as the main worklist database.
+
+Example directory structure after running:
+```
+/path/to/databases/
+├── worklist.db      # Main DICOM worklist database
+└── users.db         # API authentication database
+```
+
+### Security Considerations
+
+- **Change Default Password**: Always change the default admin password
+- **Use HTTPS**: In production, use HTTPS with proper SSL certificates  
+- **Network Security**: Restrict API access using firewalls/network policies
+- **Token Management**: JWT tokens expire after 30 minutes by default
+- **Database Permissions**: Ensure database files have appropriate file permissions
+
 ## Clean Stop of the MWL and Database Sync
 
 To cleanly stop the MWL server and ensure the database syncronization properly, press `Ctrl + C` (you might need to press it twice).
+
+To stop the API server, use `Ctrl + C` in the terminal where it's running.

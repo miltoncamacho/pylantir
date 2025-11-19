@@ -4,11 +4,11 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name =  "pylantir"
-version = "0.1.3"
+version = "0.2.0"
 authors = [
     {name = "Milton Camacho", email = "miltoncamachoicc@gmail.com"},
 ]
-description = "Python - DICOM Modality WorkList"
+description = "Python - DICOM Modality WorkList with Optional API"
 readme = "README.md"
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -37,6 +37,14 @@ dependencies = [
 pylantir = "pylantir.cli.run:main"
 
 [project.optional-dependencies]
+api = [
+    "fastapi>=0.104.1",
+    "uvicorn[standard]>=0.24.0",
+    "passlib[bcrypt]==1.7.4",
+    "bcrypt==4.0.1",
+    "python-jose[cryptography]==3.5.0",
+    "python-multipart>=0.0.6"
+]
 spark = [
     "pyspark>=3.0.0"
 ]

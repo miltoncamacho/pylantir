@@ -39,11 +39,16 @@ def parse_args():
                     help="""
                         Command to run:
                         - start: start the MWL server
-                        - query: query the MWL db
+                        - query-db: query the MWL db
                         - test-client: run tests for MWL
                         - test-mpps: run tests for MPPS
+                        - start-api: start the FastAPI server (requires [api] dependencies)
+                        - admin-password: change admin password
+                        - create-user: create a new user (admin only)
+                        - list-users: list all users (admin only)
                     """,
-                    choices=["start", "query-db", "test-client", "test-mpps"],
+                    choices=["start", "query-db", "test-client", "test-mpps", 
+                            "start-api", "admin-password", "create-user", "list-users"],
                     )
     p.add_argument("--AEtitle", help="AE Title for the server")
     p.add_argument("--ip", help="IP/host address for the server", default="0.0.0.0")
@@ -97,6 +102,57 @@ def parse_args():
         default=None,
         type=str,
         help="SOPInstanceUID to test MPPS",
+    )
+
+    # API server arguments
+    p.add_argument(
+        "--api-host", 
+        default="0.0.0.0",
+        type=str,
+        help="API server host address (default: 0.0.0.0)"
+    )
+
+    p.add_argument(
+        "--api-port",
+        default=8000,
+        type=int,
+        help="API server port (default: 8000)"
+    )
+
+    # User management arguments
+    p.add_argument(
+        "--username",
+        default=None,
+        type=str,
+        help="Username for user operations"
+    )
+
+    p.add_argument(
+        "--password",
+        default=None,
+        type=str,
+        help="Password for user operations"
+    )
+
+    p.add_argument(
+        "--email",
+        default=None,
+        type=str,
+        help="Email for user creation"
+    )
+
+    p.add_argument(
+        "--full-name",
+        default=None,
+        type=str,
+        help="Full name for user creation"
+    )
+
+    p.add_argument(
+        "--role",
+        default="read",
+        choices=["admin", "write", "read"],
+        help="User role (default: read)"
     )
 
     return p.parse_args()
@@ -285,6 +341,202 @@ def main() -> None:
             study_uid=args.study_uid,
             sop_instance_uid=args.sop_uid,
         )
+
+    if (args.command == "start-api"):
+        lgr.info("Starting Pylantir FastAPI server")
+        try:
+            # Check if API dependencies are available
+            import uvicorn
+            from ..api_server import app
+            from ..auth_db_setup import init_auth_database, create_initial_admin_user
+            
+            # Load configuration for database setup
+            config = load_config(args.pylantir_config)
+            db_path = config.get("db_path", "./worklist.db")
+            db_echo = config.get("db_echo", "False")
+            update_env_with_config(db_path=db_path, db_echo=db_echo)
+            
+            # Initialize authentication database
+            init_auth_database()
+            create_initial_admin_user()
+            
+            lgr.info(f"API server starting on {args.api_host}:{args.api_port}")
+            lgr.info("API documentation available at /docs")
+            lgr.info("Default admin credentials: username='admin', password='admin123'")
+            lgr.warning("Change the admin password immediately using 'pylantir admin-password'")
+            
+            uvicorn.run(app, host=args.api_host, port=args.api_port)
+            
+        except ImportError:
+            lgr.error("API dependencies not installed. Install with: pip install pylantir[api]")
+            sys.exit(1)
+        except Exception as e:
+            lgr.error(f"Failed to start API server: {e}")
+            sys.exit(1)
+
+    if (args.command == "admin-password"):
+        lgr.info("Changing admin password")
+        try:
+            from ..auth_db_setup import get_auth_db, init_auth_database
+            from ..auth_models import User, UserRole
+            from ..auth_utils import get_password_hash
+            import getpass
+            
+            # Initialize database
+            init_auth_database()
+            
+            # Get current password
+            current_password = getpass.getpass("Enter current admin password: ")
+            
+            # Get new password
+            new_password = getpass.getpass("Enter new password: ")
+            confirm_password = getpass.getpass("Confirm new password: ")
+            
+            if new_password != confirm_password:
+                lgr.error("Passwords do not match")
+                sys.exit(1)
+            
+            if len(new_password) < 8:
+                lgr.error("Password must be at least 8 characters long")
+                sys.exit(1)
+            
+            # Update password in database
+            db = next(get_auth_db())
+            admin_user = db.query(User).filter(
+                User.username == (args.username or "admin")
+            ).first()
+            
+            if not admin_user:
+                lgr.error("Admin user not found")
+                sys.exit(1)
+                
+            from ..auth_utils import verify_password
+            if not verify_password(current_password, admin_user.hashed_password):
+                lgr.error("Current password is incorrect")
+                sys.exit(1)
+            
+            # Update password
+            admin_user.hashed_password = get_password_hash(new_password)
+            db.commit()
+            
+            lgr.info("Admin password updated successfully")
+            
+        except ImportError:
+            lgr.error("API dependencies not installed. Install with: pip install pylantir[api]")
+            sys.exit(1)
+        except Exception as e:
+            lgr.error(f"Failed to change admin password: {e}")
+            sys.exit(1)
+
+    if (args.command == "create-user"):
+        lgr.info("Creating new user")
+        try:
+            from ..auth_db_setup import get_auth_db, init_auth_database
+            from ..auth_models import User, UserRole
+            from ..auth_utils import get_password_hash
+            import getpass
+            
+            # Initialize database
+            init_auth_database()
+            
+            # Get admin credentials
+            admin_username = input("Enter admin username: ") or "admin"
+            admin_password = getpass.getpass("Enter admin password: ")
+            
+            # Get new user details
+            username = args.username or input("Enter new username: ")
+            email = args.email or input("Enter email (optional): ") or None
+            full_name = args.full_name or input("Enter full name (optional): ") or None
+            password = args.password or getpass.getpass("Enter password for new user: ")
+            role = args.role
+            
+            if not username or not password:
+                lgr.error("Username and password are required")
+                sys.exit(1)
+            
+            # Verify admin credentials
+            db = next(get_auth_db())
+            from ..auth_utils import authenticate_user
+            admin_user = authenticate_user(db, admin_username, admin_password)
+            
+            if not admin_user or admin_user.role != UserRole.ADMIN:
+                lgr.error("Invalid admin credentials or insufficient permissions")
+                sys.exit(1)
+            
+            # Check if username already exists
+            existing_user = db.query(User).filter(User.username == username).first()
+            if existing_user:
+                lgr.error(f"Username '{username}' already exists")
+                sys.exit(1)
+            
+            # Create new user
+            from datetime import datetime
+            new_user = User(
+                username=username,
+                email=email,
+                full_name=full_name,
+                hashed_password=get_password_hash(password),
+                role=UserRole(role),
+                is_active=True,
+                created_at=datetime.utcnow(),
+                created_by=admin_user.id
+            )
+            
+            db.add(new_user)
+            db.commit()
+            
+            lgr.info(f"User '{username}' created successfully with role '{role}'")
+            
+        except ImportError:
+            lgr.error("API dependencies not installed. Install with: pip install pylantir[api]")
+            sys.exit(1)
+        except Exception as e:
+            lgr.error(f"Failed to create user: {e}")
+            sys.exit(1)
+
+    if (args.command == "list-users"):
+        lgr.info("Listing all users")
+        try:
+            from ..auth_db_setup import get_auth_db, init_auth_database
+            from ..auth_models import User, UserRole
+            import getpass
+            
+            # Initialize database
+            init_auth_database()
+            
+            # Get admin credentials
+            admin_username = input("Enter admin username: ") or "admin"
+            admin_password = getpass.getpass("Enter admin password: ")
+            
+            # Verify admin credentials
+            db = next(get_auth_db())
+            from ..auth_utils import authenticate_user
+            admin_user = authenticate_user(db, admin_username, admin_password)
+            
+            if not admin_user or admin_user.role != UserRole.ADMIN:
+                lgr.error("Invalid admin credentials or insufficient permissions")
+                sys.exit(1)
+            
+            # List all users
+            users = db.query(User).all()
+            
+            print("\nUsers:")
+            print("=" * 80)
+            print(f"{'ID':<5} {'Username':<20} {'Role':<10} {'Active':<8} {'Email':<25} {'Last Login'}")
+            print("-" * 80)
+            
+            for user in users:
+                last_login = user.last_login.strftime("%Y-%m-%d %H:%M") if user.last_login else "Never"
+                print(f"{user.id:<5} {user.username:<20} {user.role.value:<10} {user.is_active:<8} {user.email or 'N/A':<25} {last_login}")
+            
+            print(f"\nTotal users: {len(users)}")
+            
+        except ImportError:
+            lgr.error("API dependencies not installed. Install with: pip install pylantir[api]")
+            sys.exit(1)
+        except Exception as e:
+            lgr.error(f"Failed to list users: {e}")
+            sys.exit(1)
 
 
 if __name__ == "__main__":
