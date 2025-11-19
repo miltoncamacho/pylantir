@@ -47,6 +47,7 @@ class TestPylantirAPI:
         
         # Set environment variables for test databases
         os.environ['DB_PATH'] = main_db_path
+        os.environ['USERS_DB_PATH'] = auth_db_path
         
         # Create engines
         main_engine = create_engine(f"sqlite:///{main_db_path}")

@@ -1,0 +1,7 @@
+{
+  "db_path": "/tmp/test_worklist.db",
+  "users_db_path": "/tmp/test_users.db",
+  "host": "0.0.0.0",
+  "port": 8000,
+  "secret_key": "test-secret-key-for-configuration-testing"
+}

@@ -212,9 +212,15 @@ def run_test_script(script_name, **kwargs):
     else:
         lgr.error(f"Test script {script_name} does not have a 'main' function.")
 
-def update_env_with_config(db_path="~/Desktop/worklist.db", db_echo="False", env_path=".env"):
+def update_env_with_config(db_path="~/Desktop/worklist.db", db_echo="False", users_db_path=None, env_path=".env"):
     """
-    Updates db_path from the config to DB_PATH in .env.
+    Updates db_path and users_db_path from the config to environment variables in .env.
+    
+    Args:
+        db_path: Path to main worklist database
+        db_echo: Database echo setting
+        users_db_path: Optional path to users authentication database
+        env_path: Path to .env file
     """
 
     # Expand the db_path from the config
@@ -231,6 +237,15 @@ def update_env_with_config(db_path="~/Desktop/worklist.db", db_echo="False", env
     # Write to .env using python-dotenv's set_key
     set_key(dot_env_path, "DB_PATH", db_path_expanded)
     set_key(dot_env_path, "DB_ECHO", db_echo)
+    
+    # Set users database path if provided in config
+    if users_db_path:
+        try:
+            users_db_path_expanded = os.path.expanduser(users_db_path)
+            set_key(dot_env_path, "USERS_DB_PATH", users_db_path_expanded)
+            lgr.debug(f"USERS_DB_PATH set to {users_db_path_expanded}")
+        except AttributeError:
+            lgr.error("Invalid users_db_path in config.")
 
     lgr.debug(f"DB_PATH set to {db_path_expanded} and DB_ECHO to {db_echo} in {dot_env_path}")
 
@@ -256,7 +271,8 @@ def main() -> None:
         # Extract the database echo setting (default to False if missing)
         db_path = config.get("db_path", "./worklist.db")
         db_echo = config.get("db_echo", "False")
-        update_env_with_config(db_path=db_path, db_echo=db_echo)
+        users_db_path = config.get("users_db_path")  # Optional users database path
+        update_env_with_config(db_path=db_path, db_echo=db_echo, users_db_path=users_db_path)
 
 
         from ..mwl_server import run_mwl_server
@@ -354,11 +370,12 @@ def main() -> None:
             config = load_config(args.pylantir_config)
             db_path = config.get("db_path", "./worklist.db")
             db_echo = config.get("db_echo", "False")
-            update_env_with_config(db_path=db_path, db_echo=db_echo)
+            users_db_path = config.get("users_db_path")  # Optional users database path
+            update_env_with_config(db_path=db_path, db_echo=db_echo, users_db_path=users_db_path)
             
-            # Initialize authentication database
-            init_auth_database()
-            create_initial_admin_user()
+            # Initialize authentication database with configured path
+            init_auth_database(users_db_path)
+            create_initial_admin_user(users_db_path)
             
             lgr.info(f"API server starting on {args.api_host}:{args.api_port}")
             lgr.info("API documentation available at /docs")
@@ -382,8 +399,12 @@ def main() -> None:
             from ..auth_utils import get_password_hash
             import getpass
             
+            # Load configuration to get users_db_path if available
+            config = load_config(args.pylantir_config) if hasattr(args, 'pylantir_config') and args.pylantir_config else {}
+            users_db_path = config.get("users_db_path")
+            
             # Initialize database
-            init_auth_database()
+            init_auth_database(users_db_path)
             
             # Get current password
             current_password = getpass.getpass("Enter current admin password: ")
@@ -436,8 +457,12 @@ def main() -> None:
             from ..auth_utils import get_password_hash
             import getpass
             
+            # Load configuration to get users_db_path if available
+            config = load_config(args.pylantir_config) if hasattr(args, 'pylantir_config') and args.pylantir_config else {}
+            users_db_path = config.get("users_db_path")
+            
             # Initialize database
-            init_auth_database()
+            init_auth_database(users_db_path)
             
             # Get admin credentials
             admin_username = input("Enter admin username: ") or "admin"
@@ -501,8 +526,12 @@ def main() -> None:
             from ..auth_models import User, UserRole
             import getpass
             
+            # Load configuration to get users_db_path if available
+            config = load_config(args.pylantir_config) if hasattr(args, 'pylantir_config') and args.pylantir_config else {}
+            users_db_path = config.get("users_db_path")
+            
             # Initialize database
-            init_auth_database()
+            init_auth_database(users_db_path)
             
             # Get admin credentials
             admin_username = input("Enter admin username: ") or "admin"

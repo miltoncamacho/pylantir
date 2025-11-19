@@ -23,22 +23,35 @@ class AuthDatabaseError(Exception):
     pass
 
 
-def get_auth_database_url() -> str:
+def get_auth_database_url(users_db_path: Optional[str] = None) -> str:
     """
-    Get authentication database URL from environment or default location.
+    Get authentication database URL from configuration, environment, or default location.
+    
+    Args:
+        users_db_path: Optional path to users database from configuration
     
     Returns:
         str: SQLite database URL for authentication
     """
-    # Get from environment variable or default to users.db in same directory as main DB
-    main_db_path = os.getenv("DB_PATH", "~/Desktop/worklist.db")
-    
-    # Expand user path
-    main_db_path = os.path.expanduser(main_db_path)
-    
-    # Create users database in same directory as main database
-    db_dir = Path(main_db_path).parent
-    auth_db_path = db_dir / "users.db"
+    if users_db_path:
+        # Use explicitly provided users database path from configuration
+        auth_db_path = os.path.expanduser(users_db_path)
+        lgr.info(f"Using configured users database path: {auth_db_path}")
+    else:
+        # Fallback to environment variable or default location
+        auth_db_path_env = os.getenv("USERS_DB_PATH")
+        
+        if auth_db_path_env:
+            auth_db_path = os.path.expanduser(auth_db_path_env)
+            lgr.info(f"Using environment users database path: {auth_db_path}")
+        else:
+            # Default: users.db in same directory as main database
+            main_db_path = os.getenv("DB_PATH", "~/Desktop/worklist.db")
+            main_db_path = os.path.expanduser(main_db_path)
+            
+            db_dir = Path(main_db_path).parent
+            auth_db_path = db_dir / "users.db"
+            lgr.info(f"Using default users database path: {auth_db_path}")
     
     return f"sqlite:///{auth_db_path}"
 
@@ -48,12 +61,17 @@ auth_engine = None
 AuthSessionLocal = None
 
 
-def init_auth_database() -> None:
-    """Initialize authentication database engine and session factory."""
+def init_auth_database(users_db_path: Optional[str] = None) -> None:
+    """
+    Initialize authentication database engine and session factory.
+    
+    Args:
+        users_db_path: Optional path to users database from configuration
+    """
     global auth_engine, AuthSessionLocal
     
     try:
-        database_url = get_auth_database_url()
+        database_url = get_auth_database_url(users_db_path)
         lgr.info(f"Initializing authentication database: {database_url}")
         
         auth_engine = create_engine(
@@ -106,9 +124,18 @@ def get_auth_db() -> Session:
         db.close()
 
 
-def create_initial_admin_user() -> None:
-    """Create initial admin user if no users exist in database."""
+def create_initial_admin_user(users_db_path: Optional[str] = None) -> None:
+    """
+    Create initial admin user if no users exist in database.
+    
+    Args:
+        users_db_path: Optional path to users database from configuration
+    """
     try:
+        # Initialize database with correct path if not already done
+        if AuthSessionLocal is None:
+            init_auth_database(users_db_path)
+            
         db = next(get_auth_db())
         
         from .auth_utils import create_admin_user

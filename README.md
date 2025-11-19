@@ -101,6 +101,8 @@ usage: pylantir [-h] [--AEtitle AETITLE] [--ip IP] [--port PORT] [--pylantir_con
   - **site**: Site ID:string
   - **protocol**: `{"site": "protocol_name", "mapping": "HIS/RIS mapping"}`
   - **redcap2wl**: Dictionary of REDCap fields to worklist fields mapping e.g., `{"redcap_field": "worklist_field"}`
+  - **db_path**: Path to main worklist database e.g., `"/path/to/worklist.db"`
+  - **users_db_path**: Optional path to users authentication database e.g., `"/path/to/users.db"`
   - **db_update_interval**: How often to reload the database e
   - **operation_interval**: What is the time range in a day in which the database will be updated e.g., `{"start_time":[hours,minutes],"end_time":[hours,minutes]}`
 - **--mpps_action {create,set}**: Action to perform for MPPS either create or set
@@ -116,6 +118,7 @@ As a default pylantir will try to read a JSON structured file with the following
 ```json
 {
   "db_path": "/path/to/worklist.db",
+  "users_db_path": "/path/to/users.db",
   "db_echo": "False",
   "db_update_interval": 60,
   "operation_interval": {"start_time": [0,0],"end_time": [23,59]},
@@ -333,13 +336,57 @@ response = requests.post("http://localhost:8000/worklist",
 
 ### API Configuration
 
-The API server uses the same configuration file as the main DICOM server for database settings. The separate users database is automatically created in the same directory as the main worklist database.
+The API server uses the same configuration file as the main DICOM server for database settings. You can configure both the main worklist database and the users authentication database paths.
 
-Example directory structure after running:
+#### Database Configuration Options:
+
+1. **Automatic Location (Default)**:
+   ```json
+   {
+     "db_path": "/path/to/worklist.db"
+   }
+   ```
+   - Users database will be created as `users.db` in the same directory
+   - Result: `/path/to/users.db`
+
+2. **Custom Users Database Path**:
+   ```json
+   {
+     "db_path": "/path/to/worklist.db",
+     "users_db_path": "/different/path/to/authentication.db"
+   }
+   ```
+   - Users database will be created at the specified location
+   - Allows separation of databases for security or organizational reasons
+
+3. **Environment Variable Override**:
+   ```bash
+   export USERS_DB_PATH="/custom/path/to/users.db"
+   ```
+   - Takes precedence over configuration file setting
+   - Useful for deployment-specific configurations
+
+#### Configuration Precedence:
+1. `users_db_path` in configuration JSON file
+2. `USERS_DB_PATH` environment variable  
+3. Default: `users.db` in same directory as main database
+
+Example directory structures:
+
+**Default Setup:**
 ```
 /path/to/databases/
 ├── worklist.db      # Main DICOM worklist database
-└── users.db         # API authentication database
+└── users.db         # API authentication database (auto-created)
+```
+
+**Custom Setup:**
+```
+/path/to/databases/
+├── worklist.db      # Main DICOM worklist database
+
+/secure/auth/
+└── authentication.db # API authentication database (custom path)
 ```
 
 ### Security Considerations

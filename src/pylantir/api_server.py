@@ -684,8 +684,13 @@ async def health_check():
 async def startup_event():
     """Initialize authentication system on startup."""
     try:
-        init_auth_database()
-        create_initial_admin_user()
+        # Try to load configuration to get users_db_path
+        # This will work when started via CLI, but fallback gracefully for direct API startup
+        import os
+        users_db_path = os.getenv("USERS_DB_PATH")  # Set by CLI when config is loaded
+        
+        init_auth_database(users_db_path)
+        create_initial_admin_user(users_db_path)
         lgr.info("Pylantir API server started successfully")
     except Exception as e:
         lgr.error(f"Failed to initialize API server: {e}")
