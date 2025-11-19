@@ -28,7 +28,7 @@ from src.pylantir.api_server import app, get_current_user, get_auth_db
 from src.pylantir.auth_models import AuthBase, User, UserRole
 from src.pylantir.auth_utils import get_password_hash
 from src.pylantir.models import Base, WorklistItem
-from src.pylantir.db_setup import get_db
+from src.pylantir.db_setup import get_api_db
 
 
 class TestPylantirAPI:
@@ -92,7 +92,7 @@ class TestPylantirAPI:
                 db.close()
         
         # Override dependencies
-        app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_api_db] = override_get_db
         app.dependency_overrides[get_auth_db] = override_get_auth_db
         
         yield

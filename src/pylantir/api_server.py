@@ -33,7 +33,8 @@ except ImportError:
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
-from .db_setup import get_db
+from .db_setup import get_api_db
+from .db_concurrency import ConcurrencyManager, safe_database_transaction, DatabaseBusyError
 from .auth_db_setup import get_auth_db, init_auth_database, create_initial_admin_user
 from .models import WorklistItem
 from .auth_models import User, UserRole
@@ -341,7 +342,7 @@ async def get_worklist_items(
     patient_id: Optional[str] = Query(default=None, description="Filter by patient ID"),
     modality: Optional[str] = Query(default=None, description="Filter by modality"),
     current_user: User = Depends(require_permission("read", "worklist")),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_api_db)
 ):
     """
     Get worklist items with optional filtering.
@@ -380,7 +381,7 @@ async def get_worklist_items(
 async def create_worklist_item(
     item_data: WorklistItemCreate,
     current_user: User = Depends(require_permission("create", "worklist")),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_api_db)
 ):
     """
     Create a new worklist item.
@@ -418,7 +419,7 @@ async def update_worklist_item(
     item_id: int,
     item_data: WorklistItemUpdate,
     current_user: User = Depends(require_permission("update", "worklist")),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_api_db)
 ):
     """
     Update an existing worklist item.
@@ -461,7 +462,7 @@ async def update_worklist_item(
 async def delete_worklist_item(
     item_id: int,
     current_user: User = Depends(require_permission("delete", "worklist")),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_api_db)
 ):
     """
     Delete a worklist item.
