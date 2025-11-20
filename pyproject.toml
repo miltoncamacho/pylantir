@@ -45,6 +45,9 @@ api = [
     "python-jose[cryptography]==3.5.0",
     "python-multipart>=0.0.6"
 ]
+monitoring = [
+    "psutil>=5.9.0"
+]
 spark = [
     "pyspark>=3.0.0"
 ]

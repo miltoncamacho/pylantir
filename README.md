@@ -19,6 +19,48 @@ To get started simply install using:
 pip install pylantir
 ```
 
+### Optional Dependencies
+
+Pylantir offers several optional dependency groups for enhanced functionality:
+
+#### API Support
+For REST API and web interface capabilities:
+```bash
+pip install pylantir[api]
+```
+Includes: FastAPI, Uvicorn, JWT authentication, password hashing
+
+#### Memory Monitoring
+For enhanced memory usage monitoring and cleanup during REDCap synchronization:
+```bash
+pip install pylantir[monitoring]
+```
+Includes: psutil for system resource monitoring
+
+#### Big Data Processing
+For Spark-based data processing capabilities:
+```bash
+pip install pylantir[spark]
+```
+Includes: PySpark for large-scale data processing
+
+#### Multiple Options
+Install multiple optional dependency groups:
+```bash
+# API + Memory Monitoring
+pip install pylantir[api,monitoring]
+
+# All optional dependencies
+pip install pylantir[api,monitoring,spark]
+```
+
+#### Development and Testing
+For running tests and development:
+```bash
+pip install pylantir[test]
+```
+Includes: pytest, coverage tools, and testing utilities
+
 You need to provide your REDCap API URL and API token before starting the server.
 Set up environmental variables before starting the server:
 
@@ -146,6 +188,19 @@ As a default pylantir will try to read a JSON structured file with the following
   }
 }
 ```
+
+### Memory Management (Optional)
+
+When you install the `monitoring` optional dependency (`pip install pylantir[monitoring]`), Pylantir gains enhanced memory monitoring capabilities during REDCap synchronization:
+
+- **Automatic Memory Cleanup**: Performs garbage collection after each sync cycle
+- **Memory Usage Reporting**: Logs current memory usage before and after cleanup
+- **Connection Management**: Properly closes database connections and clears session caches
+- **Resource Monitoring**: Tracks system resource usage during long-running operations
+
+This is particularly useful for production deployments with frequent synchronization intervals or large datasets, helping prevent memory leaks during continuous operation.
+
+**Memory monitoring works automatically** - no additional configuration required. The system will use enhanced monitoring when `psutil` is available, and fall back to basic garbage collection when it's not installed.
 
 ## FastAPI REST API (Optional)
 
