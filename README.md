@@ -30,12 +30,14 @@ pip install pylantir[api]
 ```
 Includes: FastAPI, Uvicorn, JWT authentication, password hashing
 
-#### Memory Monitoring
+#### Memory Monitoring (Recommended for Production)
 For enhanced memory usage monitoring and cleanup during REDCap synchronization:
 ```bash
 pip install pylantir[monitoring]
 ```
 Includes: psutil for system resource monitoring
+
+**Note**: While memory cleanup functions work without psutil, you need it installed to see cleanup effectiveness in logs. Without psutil, logs will show high-water mark memory values that don't decrease, even though cleanup is working. For production deployments, installing `[monitoring]` is **highly recommended** to validate memory stability.
 
 #### Big Data Processing
 For Spark-based data processing capabilities:

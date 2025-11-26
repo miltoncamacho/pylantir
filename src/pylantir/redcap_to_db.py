@@ -55,6 +55,10 @@ def fetch_redcap_entries(redcap_fields: list, interval: float) -> list:
     datetime_interval = datetime_now - timedelta(seconds=interval)
     records = project.export_records(fields=redcap_fields, date_begin=datetime_interval, date_end=datetime_now, format_type="df")
 
+    # Clean up PyCap Project immediately after export to free API client cache
+    del project
+    gc.collect()
+
     if records.empty:
         lgr.warning("No records retrieved from REDCap.")
         return []
@@ -62,7 +66,9 @@ def fetch_redcap_entries(redcap_fields: list, interval: float) -> list:
     filtered_records = []
 
     # Group by 'record_id' (index level 0)
-    for record_id, group in records.groupby(level=0):
+    # Convert to list to avoid holding groupby iterator reference
+    record_groups = list(records.groupby(level=0))
+    for record_id, group in record_groups:
 
         # Try to get baseline (non-repeated instrument) values
         baseline_rows = group[group['redcap_repeat_instrument'].isna()]
@@ -90,6 +96,11 @@ def fetch_redcap_entries(redcap_fields: list, interval: float) -> list:
 
             filtered_records.append(record)
 
+    # Explicitly clean up DataFrame and groupby list to free memory
+    del record_groups
+    del records
+    gc.collect()
+    
     return filtered_records
 
 # TODO: Implement age binning for paricipants
@@ -164,11 +175,11 @@ def cleanup_memory_and_connections():
             lgr.debug("Disposing database connection pool")
             engine.pool.dispose()
         
-        # 3. Force Python garbage collection
-        # Run multiple times to catch circular references
-        collected = 0
-        for _ in range(3):
-            collected += gc.collect()
+        # 3. Force Python garbage collection targeting all generations
+        # Target generation 2 (oldest) first to catch long-lived objects
+        collected = gc.collect(generation=2)  # Oldest generation
+        collected += gc.collect(generation=1)  # Middle generation
+        collected += gc.collect(generation=0)  # Youngest generation
         
         # 4. Clear any cached SQLAlchemy metadata
         if hasattr(engine, 'pool'):
@@ -178,20 +189,17 @@ def cleanup_memory_and_connections():
         # Get memory usage after cleanup
         memory_after = get_memory_usage()
         
-        # Log cleanup results
-        if memory_before and memory_after:
-            if 'rss_mb' in memory_before:
-                memory_freed = memory_before['rss_mb'] - memory_after['rss_mb']
-                lgr.info(f"Memory cleanup completed. "
-                        f"Before: {memory_before['rss_mb']}MB, "
-                        f"After: {memory_after['rss_mb']}MB, "
-                        f"Freed: {memory_freed:.2f}MB, "
-                        f"Collected {collected} objects")
-            else:
-                lgr.info(f"Memory cleanup completed. Collected {collected} objects. "
-                        f"Memory stats: {memory_after}")
+        # Log cleanup results with simplified, focused metrics
+        if memory_before and memory_after and 'rss_mb' in memory_before:
+            freed = memory_before['rss_mb'] - memory_after['rss_mb']
+            lgr.info(
+                f"Memory cleanup: Before={memory_before['rss_mb']:.1f}MB, "
+                f"After={memory_after['rss_mb']:.1f}MB, "
+                f"Freed={freed:.1f}MB, "
+                f"Objects={collected}"
+            )
         else:
-            lgr.info(f"Memory cleanup completed. Collected {collected} objects")
+            lgr.info(f"Memory cleanup: Collected {collected} objects")
             
     except Exception as e:
         lgr.error(f"Error during cleanup: {e}")
@@ -328,6 +336,8 @@ def sync_redcap_to_db(
     finally:
         # Always ensure session is properly closed
         if session:
+            # Detach all ORM objects from session to clear identity map
+            session.expunge_all()
             session.close()
         
         # Perform cleanup after sync
