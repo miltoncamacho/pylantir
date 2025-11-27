@@ -61,6 +61,9 @@ def fetch_redcap_entries(redcap_fields: list, interval: float) -> list:
 
     if records.empty:
         lgr.warning("No records retrieved from REDCap.")
+        # Explicitly clean up the empty DataFrame to release any allocated buffers
+        del records
+        gc.collect()
         return []
 
     filtered_records = []
