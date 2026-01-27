@@ -257,6 +257,173 @@ You can configure multiple data sources to sync simultaneously:
 }
 ```
 
+## Calpendo Data Source Integration
+
+Pylantir supports integration with Calpendo booking systems to automatically sync MRI/EEG scanner bookings into the DICOM worklist. This allows scanner operators to see scheduled bookings directly on their imaging equipment.
+
+### Prerequisites
+
+Set up environment variables for Calpendo authentication:
+
+```bash
+export CALPENDO_USERNAME=<your_calpendo_username>
+export CALPENDO_PASSWORD=<your_calpendo_password>
+```
+
+### Minimal Configuration
+
+```json
+{
+  "db_path": "/path/to/worklist.db",
+  "data_sources": [
+    {
+      "name": "calpendo_mri",
+      "type": "calpendo",
+      "enabled": true,
+      "sync_interval": 60,
+      "config": {
+        "base_url": "https://your-institution.calpendo.com",
+        "resources": ["3T Diagnostic", "EEG Lab"],
+        "field_mapping": {
+          "patient_id": {
+            "source_field": "title",
+            "_extract": {
+              "pattern": "^([A-Z0-9]+)_.*",
+              "group": 1
+            }
+          },
+          "patient_name": {
+            "source_field": "title",
+            "_extract": {
+              "pattern": "^[A-Z0-9]+_(.+)$",
+              "group": 1
+            }
+          },
+          "study_description": {
+            "source_field": "properties.project.formattedName",
+            "_extract": {
+              "pattern": "^([^(]+)",
+              "group": 1
+            }
+          },
+          "accession_number": "id"
+        }
+      }
+    }
+  ]
+}
+```
+
+### Full Configuration with All Options
+
+```json
+{
+  "name": "calpendo_scanners",
+  "type": "calpendo",
+  "enabled": true,
+  "sync_interval": 60,
+  "config": {
+    "base_url": "https://your-institution.calpendo.com",
+    "resources": ["3T Diagnostic", "EEG Lab", "Mock Scanner"],
+    "status_filter": "Approved",
+    "lookback_multiplier": 2,
+    "timezone": "America/Edmonton",
+    "resource_modality_mapping": {
+      "3T": "MR",
+      "EEG": "EEG",
+      "Mock": "OT"
+    },
+    "field_mapping": {
+      "patient_id": {
+        "source_field": "title",
+        "_extract": {
+          "pattern": "^([A-Z0-9]+)_.*",
+          "group": 1
+        }
+      },
+      "patient_name": {
+        "source_field": "title",
+        "_extract": {
+          "pattern": "^[A-Z0-9]+_(.+)$",
+          "group": 1
+        }
+      },
+      "study_description": {
+        "source_field": "properties.project.formattedName",
+        "_extract": {
+          "pattern": "^([^(]+)",
+          "group": 1
+        }
+      },
+      "accession_number": "id",
+      "study_instance_uid": "id"
+    }
+  }
+}
+```
+
+**Calpendo Configuration Fields:**
+
+- **`base_url`**: Calpendo server URL (e.g., `https://your-institution.calpendo.com`)
+- **`resources`**: Array of resource names to sync (e.g., scanner names)
+- **`status_filter`** (optional): Only sync bookings with this status (e.g., `"Approved"`)
+- **`lookback_multiplier`** (optional, default: 2): Rolling window multiplier for incremental sync
+- **`timezone`** (optional, default: `"America/Edmonton"`): Timezone for booking timestamps
+- **`resource_modality_mapping`** (optional): Map resource names to DICOM modality codes
+- **`field_mapping`**: Maps Calpendo fields to worklist fields
+  - Use **`_extract`** for regex-based field extraction:
+    - **`pattern`**: Regular expression pattern (use `\\` for escaping in JSON)
+    - **`group`**: Capture group number (0 = full match, 1+ = capture groups)
+
+### Regex Pattern Examples
+
+Common patterns for extracting information from Calpendo booking titles:
+
+```json
+{
+  "patient_id": {
+    "source_field": "title",
+    "_extract": {
+      "pattern": "^([A-Z0-9]+)_.*",
+      "group": 1
+    }
+  },
+  "patient_name": {
+    "source_field": "title",
+    "_extract": {
+      "pattern": "^[A-Z0-9]+_(.+)$",
+      "group": 1
+    }
+  },
+  "study_description": {
+    "source_field": "properties.project.formattedName",
+    "_extract": {
+      "pattern": "^([^(]+)",
+      "group": 1
+    }
+  }
+}
+```
+
+### Troubleshooting
+
+**Authentication Errors:**
+- Verify environment variables are set correctly
+- Check Calpendo username/password are valid
+- Ensure API access is enabled for your account
+
+**No Bookings Synced:**
+- Check `resources` list matches actual Calpendo resource names
+- Verify `status_filter` isn't too restrictive
+- Check booking dates are within the rolling window (current time ± lookback window)
+
+**Regex Extraction Failures:**
+- Test regex patterns with sample data before deployment
+- Check JSON escaping (use `\\` for backslashes)
+- Set logging to DEBUG to see extraction warnings
+
+For more details, see the [Calpendo plugin quickstart](specs/002-calpendo-plugin/quickstart.md).
+
 ### Legacy Configuration Format (Deprecated)
 
 ⚠️ **The legacy configuration format is deprecated but still supported for backward compatibility.**

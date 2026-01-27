@@ -1,0 +1,53 @@
+{
+  "db_path": "~/Desktop/worklist.db",
+  "db_echo": "False",
+  "db_update_interval": 60,
+  "operation_interval": {
+    "start_time": [0, 0],
+    "end_time": [23, 59]
+  },
+  "allowed_aet": ["MRI_SCANNER", "CT_SCANNER"],
+  "data_sources": [
+    {
+      "type": "calpendo",
+      "enabled": true,
+      "config": {
+        "base_url": "https://sfc-calgary.calpendo.com",
+        "resources": ["3T Diagnostic", "EEG Lab"],
+        "status_filter": "Approved",
+        "lookback_multiplier": 2,
+        "timezone": "America/Edmonton",
+        "resource_modality_mapping": {
+          "3T": "MR",
+          "EEG": "EEG",
+          "Mock": "OT"
+        },
+        "field_mapping": {
+          "patient_id": {
+            "source_field": "title",
+            "_extract": {
+              "pattern": "^([A-Z0-9]+)_.*",
+              "group": 1
+            }
+          },
+          "patient_name": {
+            "source_field": "title",
+            "_extract": {
+              "pattern": "^[A-Z0-9]+_(.+)$",
+              "group": 1
+            }
+          },
+          "study_description": {
+            "source_field": "properties.project.formattedName",
+            "_extract": {
+              "pattern": "^([^(]+)",
+              "group": 1
+            }
+          },
+          "accession_number": "id",
+          "study_instance_uid": "id"
+        }
+      }
+    }
+  ]
+}
