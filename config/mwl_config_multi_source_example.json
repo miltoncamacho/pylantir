@@ -1,0 +1,72 @@
+{
+    "db_path": "~/Desktop/worklist.db",
+    "db_echo": "False",
+    "allowed_aet": [
+        "MRI_SCANNER",
+        "CT_SCANNER"
+    ],
+    "data_sources": [
+        {
+            "name": "main_redcap",
+            "type": "redcap",
+            "enabled": true,
+            "sync_interval": 60,
+            "operation_interval": {
+                "start_time": [
+                    8,
+                    0
+                ],
+                "end_time": [
+                    18,
+                    0
+                ]
+            },
+            "config": {
+                "site_id": "792",
+                "protocol": {
+                    "792": "BRAIN_MRI_3T",
+                    "mapping": "GEHC"
+                }
+            },
+            "field_mapping": {
+                "study_id": "study_id",
+                "mri_instance": "session_id",
+                "family_id": "family_id",
+                "youth_dob_y": "patient_birth_date",
+                "demo_sex": "patient_sex",
+                "mri_date": "scheduled_start_date",
+                "mri_time": "scheduled_start_time"
+            }
+        },
+        {
+            "name": "site_b_redcap",
+            "type": "redcap",
+            "enabled": false,
+            "sync_interval": 120,
+            "operation_interval": {
+                "start_time": [
+                    0,
+                    0
+                ],
+                "end_time": [
+                    23,
+                    59
+                ]
+            },
+            "config": {
+                "site_id": "793",
+                "protocol": {
+                    "793": "BRAIN_MRI_1.5T"
+                }
+            },
+            "field_mapping": {
+                "study_id": "study_id",
+                "mri_instance": "session_id",
+                "youth_dob_y": "patient_birth_date",
+                "demo_sex": "patient_sex",
+                "mri_date": "scheduled_start_date",
+                "mri_time": "scheduled_start_time"
+            }
+        }
+    ]
+}

@@ -1,3 +1,13 @@
+"""
+LEGACY MODULE - Backward Compatibility Wrapper for REDCapPlugin
+
+This module provides backward-compatible function signatures that internally
+delegate to the new plugin-based architecture. Existing code can continue
+calling these functions without modification.
+
+MIGRATION PATH: New code should use src/pylantir/data_sources/redcap_plugin.py
+directly instead of these legacy wrappers.
+"""
 import os
 import logging
 from redcap import Project
@@ -11,6 +21,10 @@ from datetime import datetime, time, date, timedelta
 import gc
 
 lgr = logging.getLogger(__name__)
+
+# Import the new plugin system
+from .data_sources.redcap_plugin import REDCapPlugin
+from .data_sources.base import PluginError
 
 # NOTE: pandas import removed - we use native Python dicts/lists to avoid
 # DataFrame memory overhead (50-100x memory reduction per sync cycle)
@@ -36,105 +50,70 @@ Session = sessionmaker(bind=engine)
 
 def fetch_redcap_entries(redcap_fields: list, interval: float) -> list:
     """
-    Fetch REDCap entries using PyCap and return a list of filtered dicts.
-    
-    MEMORY OPTIMIZATION: Uses format_type="json" instead of "df" to avoid
-    creating large pandas DataFrames that cause memory fragmentation.
-    This reduces memory usage by 50-100x per sync cycle.
+    LEGACY WRAPPER: Fetch REDCap entries using PyCap and return a list of filtered dicts.
+
+    **DEPRECATION NOTICE**: This function is deprecated and maintained only for
+    backward compatibility. New code should use REDCapPlugin.fetch_entries() directly
+    from src/pylantir/data_sources/redcap_plugin.py
+
+    This function now delegates to REDCapPlugin for consistency with the new
+    plugin architecture. Existing callers can continue using this signature.
+
+    Args:
+        redcap_fields: List of REDCap field names to fetch
+        interval: Time window in seconds to fetch records from
+
+    Returns:
+        List of filtered MRI record dictionaries
+
+    MIGRATION PATH: Use REDCapPlugin directly:
+        ```python
+        from pylantir.data_sources.redcap_plugin import REDCapPlugin
+        plugin = REDCapPlugin(name, config, field_mapping)
+        entries = plugin.fetch_entries(since=datetime_interval)
+        ```
     """
-    project = Project(REDCAP_API_URL, REDCAP_API_TOKEN)
+    lgr.warning(
+        "fetch_redcap_entries() is deprecated. "
+        "Use REDCapPlugin from src/pylantir/data_sources/redcap_plugin.py instead."
+    )
 
-    if not redcap_fields:
-        lgr.error("No field mapping (redcap2wl) provided for REDCap retrieval.")
-        return []
-
-    # Fetch metadata to get valid REDCap field names
-    valid_fields = {field["field_name"] for field in project.export_metadata()}
-    redcap_fields = [field for field in redcap_fields if field in valid_fields]
-
-    if not redcap_fields:
-        lgr.error("No valid REDCap fields found in provided mapping.")
-        return []
-
-    lgr.info(f"Fetching REDCap data for fields: {redcap_fields}")
-
-    # Export data as JSON (list of dicts) instead of DataFrame
-    # This uses 50-100x less memory and prevents allocator fragmentation
-    datetime_now = datetime.now()
-    datetime_interval = datetime_now - timedelta(seconds=interval)
-    
     try:
-        records = project.export_records(
-            fields=redcap_fields,
-            date_begin=datetime_interval,
-            date_end=datetime_now,
-            format_type="json"  # Returns list of dicts, not DataFrame
-        )
-    finally:
-        # Clean up PyCap Project immediately after export
-        del project
-        gc.collect()
+        # Build plugin configuration from environment variables
+        config = {
+            "site_id": "default",  # Legacy calls don't have site_id
+            "protocol": "DEFAULT_PROTOCOL"
+        }
 
-    if not records:
-        lgr.warning("No records retrieved from REDCap.")
+        # Create field mapping for plugin (maps REDCap field name to itself)
+        field_mapping = {field: field for field in redcap_fields}
+
+        # Instantiate plugin (no arguments)
+        plugin = REDCapPlugin()
+
+        # Validate configuration
+        is_valid, error_msg = plugin.validate_config(config)
+        if not is_valid:
+            lgr.error(f"Plugin configuration validation failed: {error_msg}")
+            return []
+
+        # Fetch entries using plugin
+        datetime_now = datetime.now()
+        datetime_interval = datetime_now - timedelta(seconds=interval)
+
+        entries = plugin.fetch_entries(field_mapping=field_mapping, interval=interval)
+
+        # Cleanup plugin resources
+        plugin.cleanup()
+
+        return entries
+
+    except PluginError as e:
+        lgr.error(f"Plugin error in legacy fetch_redcap_entries: {e}")
         return []
-
-    lgr.info(f"Retrieved {len(records)} raw records from REDCap")
-
-    # Group records by record_id using native Python (no pandas)
-    records_by_id = {}
-    for record in records:
-        record_id = record.get('record_id')
-        if record_id not in records_by_id:
-            records_by_id[record_id] = []
-        records_by_id[record_id].append(record)
-
-    filtered_records = []
-
-    # Process each record_id group
-    for record_id, group in records_by_id.items():
-        # Find baseline (non-repeated instrument) values
-        baseline_record = None
-        for rec in group:
-            if not rec.get('redcap_repeat_instrument'):
-                baseline_record = rec
-                break
-        
-        if baseline_record is None:
-            baseline_record = {}
-
-        # Filter for valid MRI rows only
-        mri_rows = [
-            rec for rec in group
-            if rec.get('redcap_repeat_instrument') == 'mri'
-            and rec.get('mri_instance')
-            and rec.get('mri_instance') != ''
-            and rec.get('mri_date')
-            and rec.get('mri_time')
-        ]
-
-        for mri_row in mri_rows:
-            record = {"record_id": record_id}
-
-            # Merge fields from baseline and mri_row
-            for field in redcap_fields:
-                # Use MRI row value if present, otherwise baseline
-                if field in mri_row and mri_row[field] not in (None, '', 'NaN'):
-                    record[field] = mri_row[field]
-                elif field in baseline_record:
-                    record[field] = baseline_record[field]
-                else:
-                    record[field] = None
-
-            filtered_records.append(record)
-
-    # Clean up intermediate data structures
-    del records_by_id
-    del records
-    gc.collect()
-
-    lgr.info(f"Filtered to {len(filtered_records)} MRI records")
-    return filtered_records# TODO: Implement age binning for paricipants
+    except Exception as e:
+        lgr.error(f"Unexpected error in legacy fetch_redcap_entries: {e}")
+        return []# TODO: Implement age binning for paricipants
 def age_binning():
     return None
 
@@ -191,35 +170,35 @@ def cleanup_memory_and_connections():
     This function should be called after each synchronization cycle.
     """
     lgr.debug("Starting memory and connection cleanup...")
-    
+
     # Get memory usage before cleanup
     memory_before = get_memory_usage()
-    
+
     try:
         # 1. Clear pandas cache and temporary objects
         # Force garbage collection of pandas objects
         gc.collect()
-        
+
         # 2. Close any idle database connections in the pool
         if hasattr(engine, 'pool'):
             # Dispose of the connection pool to free up connections
             lgr.debug("Disposing database connection pool")
             engine.pool.dispose()
-        
+
         # 3. Force Python garbage collection targeting all generations
         # Target generation 2 (oldest) first to catch long-lived objects
         collected = gc.collect(generation=2)  # Oldest generation
         collected += gc.collect(generation=1)  # Middle generation
         collected += gc.collect(generation=0)  # Youngest generation
-        
+
         # 4. Clear any cached SQLAlchemy metadata
         if hasattr(engine, 'pool'):
             # Recreate the pool with fresh connections
             engine.pool.recreate()
-        
+
         # Get memory usage after cleanup
         memory_after = get_memory_usage()
-        
+
         # Log cleanup results with simplified, focused metrics
         if memory_before and memory_after and 'rss_mb' in memory_before:
             freed = memory_before['rss_mb'] - memory_after['rss_mb']
@@ -231,7 +210,7 @@ def cleanup_memory_and_connections():
             )
         else:
             lgr.info(f"Memory cleanup: Collected {collected} objects")
-            
+
     except Exception as e:
         lgr.error(f"Error during cleanup: {e}")
         # Don't let cleanup errors stop the main process
@@ -244,7 +223,23 @@ def sync_redcap_to_db(
     redcap2wl: dict,
     interval: float = 60.0,
 ) -> None:
-    """Sync REDCap patient data with the worklist database."""
+    """
+    LEGACY WRAPPER: Sync REDCap patient data with the worklist database.
+
+    **DEPRECATION NOTICE**: This function is deprecated and maintained only for
+    backward compatibility. New code should use the plugin-based architecture
+    from src/pylantir/data_sources/
+
+    NOTE: This function now uses REDCapPlugin internally via fetch_redcap_entries()
+    wrapper, ensuring consistent behavior with the new plugin architecture.
+
+    MIGRATION PATH: Use data_sources configuration in mwl_config.json instead
+    of calling this function directly.
+    """
+    lgr.warning(
+        "sync_redcap_to_db() is deprecated. "
+        "Use data_sources configuration with REDCapPlugin instead."
+    )
 
     if not redcap2wl:
         lgr.error("No field mapping (redcap2wl) provided for syncing.")
@@ -269,6 +264,7 @@ def sync_redcap_to_db(
             if i not in redcap_fields:
                 redcap_fields.append(i)
 
+        # NOTE: fetch_redcap_entries() now delegates to REDCapPlugin internally
         redcap_entries = fetch_redcap_entries(redcap_fields, interval)
 
         for record in redcap_entries:
@@ -358,7 +354,7 @@ def sync_redcap_to_db(
 
         session.commit()
         logging.info("REDCap data synchronized successfully with DICOM worklist database.")
-        
+
     except Exception as e:
         lgr.error(f"Error during REDCap synchronization: {e}")
         if session:
@@ -370,10 +366,10 @@ def sync_redcap_to_db(
             # Detach all ORM objects from session to clear identity map
             session.expunge_all()
             session.close()
-        
+
         # Perform cleanup after sync
         cleanup_memory_and_connections()
-        
+
         # Log memory usage after cleanup
         memory_after = get_memory_usage()
         if memory_after:
@@ -388,10 +384,19 @@ def sync_redcap_to_db_repeatedly(
     operation_interval={"start_time": [00,00], "end_time": [23,59]},
 ):
     """
-    Keep syncing with REDCap in a loop every `interval` seconds,
-    but only between operation_interval[start_time] and operation_interval[end_time].
-    Exit cleanly when STOP_EVENT is set.
+    LEGACY WRAPPER: Keep syncing with REDCap in a loop every `interval` seconds.
+
+    **DEPRECATION NOTICE**: This function is deprecated and maintained only for
+    backward compatibility. New code should use the plugin-based multi-source
+    orchestration from src/pylantir/cli/run.py
+
+    MIGRATION PATH: Configure data_sources array in mwl_config.json and use
+    the new orchestration system.
     """
+    lgr.warning(
+        "sync_redcap_to_db_repeatedly() is deprecated. "
+        "Use data_sources configuration with multi-source orchestration instead."
+    )
     if operation_interval is None:
         operation_interval = {"start_time": [0, 0], "end_time": [23, 59]}
 
@@ -427,6 +432,8 @@ def sync_redcap_to_db_repeatedly(
                 dt_end_yesterday = datetime.combine(yesterday, end_time)
                 dt_start_today = datetime.combine(today_date, start_time)
                 delta = dt_start_today - dt_end_yesterday
+                #terporary large interval to catch up on missed data
+                # delta = delta + timedelta(seconds=6000000)
                 # guaranteed to be positive if yesterday < today
                 extended_interval = delta.total_seconds()
                 logging.info(f"Using extended interval: {extended_interval}, {interval} seconds until next sync.")
@@ -468,7 +475,7 @@ def sync_redcap_to_db_repeatedly(
                 f"Current time {now_time} is outside operation window "
                 f"({start_time}–{end_time}). Sleeping for {interval} seconds."
             )
-            
+
             # Run periodic cleanup even during off-hours to prevent memory buildup
             # Only run every 10th cycle to avoid excessive overhead
             if (now_dt.hour == 3 and now_dt.minute == 0):  # Daily cleanup at 3 AM

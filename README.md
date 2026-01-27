@@ -141,14 +141,16 @@ usage: pylantir [-h] [--AEtitle AETITLE] [--ip IP] [--port PORT] [--pylantir_con
 - **--ip IP**: IP/host address for the server
 - **--port PORT**: Port for the server
 - **--pylantir_config PYLANTIR_CONFIG**: Path to the configuration JSON file containing pylantir configs:
+  - **data_sources**: Array of data source configurations (recommended new format)
+    - Each source has: `name`, `type`, `enabled`, `sync_interval`, `operation_interval`, `config`, `field_mapping`
+  - **redcap2wl**: Legacy field mapping (deprecated, auto-converts to data_sources)
   - **allowed_aet**: List of allowed AE titles e.g. `["MRI_SCANNER", "MRI_SCANNER_2"]`
-  - **site**: Site ID:string
+  - **site**: Site ID (legacy format, deprecated)
   - **protocol**: `{"site": "protocol_name", "mapping": "HIS/RIS mapping"}`
-  - **redcap2wl**: Dictionary of REDCap fields to worklist fields mapping e.g., `{"redcap_field": "worklist_field"}`
   - **db_path**: Path to main worklist database e.g., `"/path/to/worklist.db"`
   - **users_db_path**: Optional path to users authentication database e.g., `"/path/to/users.db"`
-  - **db_update_interval**: How often to reload the database e
-  - **operation_interval**: What is the time range in a day in which the database will be updated e.g., `{"start_time":[hours,minutes],"end_time":[hours,minutes]}`
+  - **db_update_interval**: Legacy sync interval (deprecated, use sync_interval in data_sources)
+  - **operation_interval**: Legacy operation window (deprecated, use operation_interval in data_sources)
 - **--mpps_action {create,set}**: Action to perform for MPPS either create or set
 - **--mpps_status {COMPLETED,DISCONTINUED}**: Status to set for MPPS either COMPLETED or DISCONTINUED
 - **--callingAEtitle CALLINGAETITLE**: Calling AE Title for MPPS, it helps when the MWL is limited to only accept certain AE titles
@@ -157,39 +159,141 @@ usage: pylantir [-h] [--AEtitle AETITLE] [--ip IP] [--port PORT] [--pylantir_con
 
 ## Configuration JSON file
 
-As a default pylantir will try to read a JSON structured file with the following structure:
+Pylantir supports a modular data sources configuration that allows you to connect to multiple data sources simultaneously.
+
+### New Data Sources Format (Recommended)
+
+The new configuration format uses a `data_sources` array to define one or more data sources:
 
 ```json
 {
   "db_path": "/path/to/worklist.db",
   "users_db_path": "/path/to/users.db",
   "db_echo": "False",
-  "db_update_interval": 60,
-  "operation_interval": {"start_time": [0,0],"end_time": [23,59]},
   "allowed_aet": [],
-  "site": "792",
-  "redcap2wl": {
-    "study_id": "study_id",
-    "instrument": "redcap_repeat_instrument",
-    "session_id" : "mri_instance",
-    "family_id": "family_id",
-    "youth_dob_y": "youth_dob_y",
-    "t1_date": "t1_date",
-    "demo_sex": "demo_sex",
-    "scheduled_date": "mri_date",
-    "scheduled_time": "mri_time",
-    "mri_wt_lbs": "patient_weight_lb",
-    "referring_physician": "referring_physician_name",
-    "performing_physician": "performing_physician",
-    "station_name": "station_name",
-    "status": "performed_procedure_step_status"
-  },
+  "data_sources": [
+    {
+      "name": "main_redcap",
+      "type": "redcap",
+      "enabled": true,
+      "sync_interval": 60,
+      "operation_interval": {
+        "start_time": [0, 0],
+        "end_time": [23, 59]
+      },
+      "config": {
+        "site_id": "792",
+        "protocol": "BRAIN_MRI_3T"
+      },
+      "field_mapping": {
+        "study_id": "study_id",
+        "instrument": "redcap_repeat_instrument",
+        "session_id": "mri_instance",
+        "family_id": "family_id",
+        "youth_dob_y": "youth_dob_y",
+        "t1_date": "t1_date",
+        "demo_sex": "demo_sex",
+        "scheduled_date": "mri_date",
+        "scheduled_time": "mri_time",
+        "mri_wt_lbs": "patient_weight_lb",
+        "referring_physician": "referring_physician_name",
+        "performing_physician": "performing_physician",
+        "station_name": "station_name",
+        "status": "performed_procedure_step_status"
+      }
+    }
+  ],
   "protocol": {
     "792": "BRAIN_MRI_3T",
     "mapping": "GEHC"
   }
 }
 ```
+
+**Data Source Configuration Fields:**
+
+- **`name`**: Unique identifier for this data source (used in logs and database tracking)
+- **`type`**: Data source type (currently supports `"redcap"`; extensible for future sources)
+- **`enabled`**: Boolean to enable/disable this source without removing its configuration
+- **`sync_interval`**: How often to sync data (in seconds)
+- **`operation_interval`**: Time window when sync should occur (24-hour format)
+  - `start_time`: `[hours, minutes]` - Start of operation window
+  - `end_time`: `[hours, minutes]` - End of operation window
+- **`config`**: Source-specific configuration
+  - For REDCap: `site_id`, `protocol`, and optional API credentials
+- **`field_mapping`**: Maps source fields to DICOM worklist fields
+
+### Multiple Data Sources Example
+
+You can configure multiple data sources to sync simultaneously:
+
+```json
+{
+  "db_path": "/path/to/worklist.db",
+  "data_sources": [
+    {
+      "name": "site_792_redcap",
+      "type": "redcap",
+      "enabled": true,
+      "sync_interval": 60,
+      "config": {
+        "site_id": "792",
+        "protocol": "BRAIN_MRI_3T"
+      },
+      "field_mapping": { "study_id": "study_id" }
+    },
+    {
+      "name": "site_793_redcap",
+      "type": "redcap",
+      "enabled": true,
+      "sync_interval": 120,
+      "config": {
+        "site_id": "793",
+        "protocol": "CARDIAC_MRI"
+      },
+      "field_mapping": { "patient_id": "patient_id" }
+    }
+  ]
+}
+```
+
+### Legacy Configuration Format (Deprecated)
+
+⚠️ **The legacy configuration format is deprecated but still supported for backward compatibility.**
+
+If you're using the old format, Pylantir will automatically convert it to the new format at runtime:
+
+```json
+{
+  "db_path": "/path/to/worklist.db",
+  "db_echo": "False",
+  "db_update_interval": 60,
+  "operation_interval": {"start_time": [0,0], "end_time": [23,59]},
+  "site": "792",
+  "redcap2wl": {
+    "study_id": "study_id",
+    "demo_sex": "demo_sex"
+  },
+  "protocol": {
+    "792": "BRAIN_MRI_3T"
+  }
+}
+```
+
+When using the legacy format, you'll see a deprecation warning:
+```
+WARNING: Legacy configuration format detected.
+Consider migrating to 'data_sources' format for better flexibility.
+```
+
+**Migration Note**: To migrate from legacy to new format:
+1. Rename `redcap2wl` → `field_mapping`
+2. Move `site` → `config.site_id`
+3. Move `protocol[site]` → `config.protocol`
+4. Move `db_update_interval` → `sync_interval`
+5. Wrap everything in a `data_sources` array with `name`, `type`, and `enabled` fields
+
+See `config/mwl_config_multi_source_example.json` for a complete example.
 
 ### Memory Management (Optional)
 

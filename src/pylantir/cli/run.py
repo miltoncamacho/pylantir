@@ -160,6 +160,7 @@ def parse_args():
 def load_config(config_path=None):
     """
     Load configuration file, either from a user-provided path or the default package location.
+    Auto-converts legacy configuration format to new data_sources format.
 
     Args:
         config_path (str | Path, optional): Path to the configuration JSON file.
@@ -176,6 +177,35 @@ def load_config(config_path=None):
         with config_path.open("r") as f:
             config_data = json.load(f)
         lgr.info(f"Loaded configuration from {config_path}")
+
+        # Auto-convert legacy configuration format
+        if "data_sources" not in config_data and "redcap2wl" in config_data:
+            lgr.warning(
+                "Legacy configuration format detected. "
+                "Consider migrating to 'data_sources' format for better flexibility. "
+                "See config/mwl_config_multi_source_example.json for reference."
+            )
+
+            # Convert legacy format to data_sources array
+            legacy_source = {
+                "name": "redcap_legacy",
+                "type": "redcap",
+                "enabled": True,
+                "sync_interval": config_data.get("db_update_interval", 60),
+                "operation_interval": config_data.get(
+                    "operation_interval",
+                    {"start_time": [0, 0], "end_time": [23, 59]}
+                ),
+                "config": {
+                    "site_id": config_data.get("site"),
+                    "protocol": config_data.get("protocol", {}),
+                },
+                "field_mapping": config_data.get("redcap2wl", {})
+            }
+
+            config_data["data_sources"] = [legacy_source]
+            lgr.info("Auto-converted legacy configuration to data_sources format")
+
         return config_data
 
     except FileNotFoundError:
@@ -285,52 +315,136 @@ def main() -> None:
         # Load configuration into environment variables
         update_env_with_config(config)
 
-
         from ..mwl_server import run_mwl_server
-        from ..redcap_to_db import sync_redcap_to_db_repeatedly
-
-        # Extract the database update interval (default to 60 seconds if missing)
-        db_update_interval = config.get("db_update_interval", 60)
-
-        # Extract the operation interval (default from 00:00 to 23:59 hours if missing)
-        operation_interval = config.get("operation_interval", {"start_time": [0,0], "end_time": [23,59]})
 
         # Extract allowed AE Titles (default to empty list if missing)
         allowed_aet = config.get("allowed_aet", [])
 
-        # Extract the site id
-        site = config.get("site", None)
+        # Check if using new data_sources format or legacy format
+        if "data_sources" in config:
+            # NEW: Multi-source orchestration using plugin architecture
+            lgr.info("Using new data_sources configuration format")
 
-        # Extract the redcap to worklist mapping
-        redcap2wl = config.get("redcap2wl", {})
+            from ..data_sources import get_plugin
+            from ..data_sources.base import PluginError
+            import threading
 
-        # EXtract protocol mapping
-        protocol = config.get("protocol", {})
+            data_sources = config.get("data_sources", [])
+            enabled_sources = [src for src in data_sources if src.get("enabled", True)]
 
-        # Create and update the MWL database
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            future = executor.submit(
-                sync_redcap_to_db_repeatedly,
-                site_id=site,
-                protocol=protocol,
-                redcap2wl=redcap2wl,
-                interval=db_update_interval,
-                operation_interval=operation_interval,
-            )
+            if not enabled_sources:
+                lgr.warning("No enabled data sources found in configuration")
+            else:
+                lgr.info(f"Found {len(enabled_sources)} enabled data source(s)")
 
-                # sync_redcap_to_db(
-                #     mri_visit_mapping=mri_visit_session_mapping,
-                #     site_id=site,
-                #     protocol=protocol,
-                #     redcap2wl=redcap2wl,
-                # )
+            # Create sync function for each data source
+            def sync_source_repeatedly(source_config):
+                """Sync a single data source in a loop."""
+                source_name = source_config.get("name", "unknown")
+                source_type = source_config.get("type", "unknown")
 
-            run_mwl_server(
-                host=args.ip,
-                port=args.port,
-                aetitle=args.AEtitle,
-                allowed_aets=allowed_aet,
-            )
+                try:
+                    # Get the plugin class for this source type
+                    PluginClass = get_plugin(source_type)
+                    lgr.info(f"[{source_name}] Initializing {source_type} plugin")
+
+                    # Instantiate the plugin (no arguments)
+                    plugin = PluginClass()
+
+                    # Validate plugin configuration
+                    is_valid, error_msg = plugin.validate_config(source_config.get("config", {}))
+                    if not is_valid:
+                        lgr.error(f"[{source_name}] Configuration validation failed: {error_msg}")
+                        return
+
+                    # Import the sync logic from redcap_to_db
+                    from ..redcap_to_db import sync_redcap_to_db_repeatedly, STOP_EVENT
+
+                    # Extract source-specific settings
+                    sync_interval = source_config.get("sync_interval", 60)
+                    operation_interval = source_config.get("operation_interval", {
+                        "start_time": [0, 0],
+                        "end_time": [23, 59]
+                    })
+
+                    # Get site_id and protocol from plugin config
+                    site_id = source_config.get("config", {}).get("site_id")
+                    protocol_name = source_config.get("config", {}).get("protocol")
+                    protocol = config.get("protocol", {})
+
+                    lgr.info(f"[{source_name}] Starting sync loop (interval: {sync_interval}s, site: {site_id})")
+
+                    # Use the existing sync function but pass the plugin's field_mapping
+                    sync_redcap_to_db_repeatedly(
+                        site_id=site_id,
+                        protocol=protocol,
+                        redcap2wl=source_config.get("field_mapping", {}),
+                        interval=sync_interval,
+                        operation_interval=operation_interval,
+                    )
+
+                except PluginError as e:
+                    lgr.error(f"[{source_name}] Plugin error: {e}")
+                except Exception as e:
+                    lgr.error(f"[{source_name}] Unexpected error: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+            # Start a thread for each enabled data source
+            max_workers = len(enabled_sources) + 1  # +1 for MWL server
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit sync tasks for each data source
+                for source in enabled_sources:
+                    source_name = source.get("name", "unknown")
+                    lgr.info(f"Starting background sync for data source: {source_name}")
+                    executor.submit(sync_source_repeatedly, source)
+
+                # Start the MWL server in the main thread
+                run_mwl_server(
+                    host=args.ip,
+                    port=args.port,
+                    aetitle=args.AEtitle,
+                    allowed_aets=allowed_aet,
+                )
+
+        else:
+            # LEGACY: Fall back to old single-source configuration
+            lgr.warning("Using legacy configuration format. Consider migrating to data_sources format.")
+
+            from ..redcap_to_db import sync_redcap_to_db_repeatedly
+
+            # Extract the database update interval (default to 60 seconds if missing)
+            db_update_interval = config.get("db_update_interval", 60)
+
+            # Extract the operation interval (default from 00:00 to 23:59 hours if missing)
+            operation_interval = config.get("operation_interval", {"start_time": [0,0], "end_time": [23,59]})
+
+            # Extract the site id
+            site = config.get("site", None)
+
+            # Extract the redcap to worklist mapping
+            redcap2wl = config.get("redcap2wl", {})
+
+            # Extract protocol mapping
+            protocol = config.get("protocol", {})
+
+            # Create and update the MWL database
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                future = executor.submit(
+                    sync_redcap_to_db_repeatedly,
+                    site_id=site,
+                    protocol=protocol,
+                    redcap2wl=redcap2wl,
+                    interval=db_update_interval,
+                    operation_interval=operation_interval,
+                )
+
+                run_mwl_server(
+                    host=args.ip,
+                    port=args.port,
+                    aetitle=args.AEtitle,
+                    allowed_aets=allowed_aet,
+                )
 
     if (args.command == "query-db"):
         from ..mwl_server import run_mwl_server
@@ -482,7 +596,7 @@ def main() -> None:
             email = args.email or input("Enter email (optional): ") or None
             full_name = args.full_name or input("Enter full name (optional): ") or None
             password = args.password or getpass.getpass("Enter password for new user: ")
-            
+
             # Get user role with interactive prompt
             if args.role == "read":  # Default value, prompt for role
                 print("\nAvailable user roles:")

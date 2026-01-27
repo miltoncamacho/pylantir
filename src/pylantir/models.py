@@ -43,6 +43,9 @@ class WorklistItem(Base):
         lgr.warning("Could not get hisris_coding_designator check models.py ")
     performed_procedure_step_status = Column(String, default="SCHEDULED")
 
+    # Data source tracking (for multi-source architecture)
+    data_source = Column(String(255), nullable=True, default=None)
+
 
     def __repr__(self):
         return (f"<WorklistItem(id={self.id}, study_instance_uid={self.study_instance_uid}, patient_name={self.patient_name}, "
