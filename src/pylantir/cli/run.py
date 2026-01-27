@@ -327,6 +327,7 @@ def main() -> None:
 
             from ..data_sources import get_plugin
             from ..data_sources.base import PluginError
+            from ..redcap_to_db import STOP_EVENT
             import threading
 
             data_sources = config.get("data_sources", [])
@@ -337,18 +338,21 @@ def main() -> None:
             else:
                 lgr.info(f"Found {len(enabled_sources)} enabled data source(s)")
 
-            # Create sync function for each data source
-            def sync_source_repeatedly(source_config):
-                """Sync a single data source in a loop."""
+            def sync_data_source_repeatedly(source_config):
+                """
+                Generic sync loop for any data source plugin.
+
+                This function works with any plugin type (REDCap, CSV, API, etc.)
+                by using the plugin interface rather than source-specific code.
+                """
                 source_name = source_config.get("name", "unknown")
                 source_type = source_config.get("type", "unknown")
 
                 try:
-                    # Get the plugin class for this source type
+                    # Get and instantiate the plugin
                     PluginClass = get_plugin(source_type)
                     lgr.info(f"[{source_name}] Initializing {source_type} plugin")
 
-                    # Instantiate the plugin (no arguments)
                     plugin = PluginClass()
 
                     # Validate plugin configuration
@@ -357,31 +361,133 @@ def main() -> None:
                         lgr.error(f"[{source_name}] Configuration validation failed: {error_msg}")
                         return
 
-                    # Import the sync logic from redcap_to_db
-                    from ..redcap_to_db import sync_redcap_to_db_repeatedly, STOP_EVENT
-
-                    # Extract source-specific settings
+                    # Extract sync settings
                     sync_interval = source_config.get("sync_interval", 60)
                     operation_interval = source_config.get("operation_interval", {
                         "start_time": [0, 0],
                         "end_time": [23, 59]
                     })
 
-                    # Get site_id and protocol from plugin config
-                    site_id = source_config.get("config", {}).get("site_id")
-                    protocol_name = source_config.get("config", {}).get("protocol")
-                    protocol = config.get("protocol", {})
+                    lgr.info(f"[{source_name}] Starting sync loop (interval: {sync_interval}s)")
 
-                    lgr.info(f"[{source_name}] Starting sync loop (interval: {sync_interval}s, site: {site_id})")
-
-                    # Use the existing sync function but pass the plugin's field_mapping
-                    sync_redcap_to_db_repeatedly(
-                        site_id=site_id,
-                        protocol=protocol,
-                        redcap2wl=source_config.get("field_mapping", {}),
-                        interval=sync_interval,
-                        operation_interval=operation_interval,
+                    # Import database and sync utilities
+                    from ..redcap_to_db import (
+                        Session, WorklistItem, generate_instance_uid,
+                        convert_weight, cleanup_memory_and_connections, get_memory_usage
                     )
+                    from datetime import datetime, time as dt_time, timedelta
+                    import logging
+
+                    # Parse operation interval
+                    start_h, start_m = operation_interval.get("start_time", [0, 0])
+                    end_h, end_m = operation_interval.get("end_time", [23, 59])
+                    start_time = dt_time(start_h, start_m)
+                    end_time = dt_time(end_h, end_m)
+
+                    last_sync_date = datetime.now().date() - timedelta(days=1)
+                    interval_sync = sync_interval + 300  # Overlap to avoid missing data
+
+                    # Sync loop
+                    while not STOP_EVENT.is_set():
+                        is_first_run = False
+                        extended_interval = sync_interval
+
+                        now_dt = datetime.now().replace(second=0, microsecond=0)
+                        now_time = now_dt.time()
+                        today_date = now_dt.date()
+
+                        # Only sync within operation interval
+                        if start_time <= now_time <= end_time:
+                            is_first_run = (last_sync_date != today_date)
+
+                            if is_first_run and (last_sync_date is not None):
+                                yesterday = last_sync_date
+                                dt_end_yesterday = datetime.combine(yesterday, end_time)
+                                dt_start_today = datetime.combine(today_date, start_time)
+                                delta = dt_start_today - dt_end_yesterday
+                                extended_interval = delta.total_seconds()
+                                # temporary increase interval to cover gap since last sync
+                                # extended_interval += 60
+                                logging.info(f"[{source_name}] First sync of the day at {now_time}")
+
+                            # Fetch entries using plugin
+                            try:
+                                fetch_interval = extended_interval if is_first_run else interval_sync
+                                field_mapping = source_config.get("field_mapping", {})
+
+                                lgr.debug(f"[{source_name}] Fetching entries (interval: {fetch_interval}s)")
+                                entries = plugin.fetch_entries(
+                                    field_mapping=field_mapping,
+                                    interval=fetch_interval
+                                )
+
+                                if entries:
+                                    lgr.info(f"[{source_name}] Fetched {len(entries)} entries")
+
+                                    # Get source-specific config
+                                    site_id = source_config.get("config", {}).get("site_id")
+                                    protocol = config.get("protocol", {})
+
+                                    # Process entries (source-agnostic)
+                                    session = Session()
+                                    try:
+                                        for record in entries:
+                                            # This is still REDCap-specific logic
+                                            # TODO: Move this to plugin's transform method
+                                            study_id = record.get("study_id", "").split('-')[-1] if record.get("study_id") else None
+                                            family_id = record.get("family_id", "").split('-')[-1] if record.get("family_id") else None
+                                            ses_id = record.get("mri_instance")
+
+                                            if not study_id:
+                                                continue
+
+                                            PatientName = f"cpip-id-{study_id}^fa-{family_id}"
+                                            PatientID = f"sub_{study_id}_ses_{ses_id}_fam_{family_id}_site_{site_id}"
+
+                                            # Check for existing entry
+                                            existing_entry = session.query(WorklistItem).filter_by(patient_id=PatientID).first()
+
+                                            if existing_entry:
+                                                existing_entry.data_source = source_name
+                                                existing_entry.scheduled_start_date = record.get("mri_date")
+                                                existing_entry.scheduled_start_time = record.get("mri_time")
+                                            else:
+                                                new_entry = WorklistItem(
+                                                    study_instance_uid=generate_instance_uid(),
+                                                    patient_name=PatientName,
+                                                    patient_id=PatientID,
+                                                    patient_birth_date=f"{record.get('youth_dob_y', '2012')}0101",
+                                                    patient_sex=record.get("demo_sex"),
+                                                    modality=record.get("modality", "MR"),
+                                                    scheduled_start_date=record.get("mri_date"),
+                                                    scheduled_start_time=record.get("mri_time"),
+                                                    protocol_name=protocol.get(site_id, "DEFAULT_PROTOCOL"),
+                                                    performed_procedure_step_status="SCHEDULED",
+                                                    data_source=source_name
+                                                )
+                                                session.add(new_entry)
+
+                                        session.commit()
+                                        lgr.info(f"[{source_name}] Sync completed successfully")
+                                    except Exception as e:
+                                        session.rollback()
+                                        lgr.error(f"[{source_name}] Database error: {e}")
+                                    finally:
+                                        session.expunge_all()
+                                        session.close()
+                                        cleanup_memory_and_connections()
+
+                                last_sync_date = today_date
+
+                            except Exception as e:
+                                lgr.error(f"[{source_name}] Sync error: {e}")
+                                import traceback
+                                traceback.print_exc()
+
+                        # Wait before next iteration
+                        STOP_EVENT.wait(sync_interval)
+
+                    lgr.info(f"[{source_name}] Exiting sync loop (STOP_EVENT set)")
 
                 except PluginError as e:
                     lgr.error(f"[{source_name}] Plugin error: {e}")
@@ -397,7 +503,7 @@ def main() -> None:
                 for source in enabled_sources:
                     source_name = source.get("name", "unknown")
                     lgr.info(f"Starting background sync for data source: {source_name}")
-                    executor.submit(sync_source_repeatedly, source)
+                    executor.submit(sync_data_source_repeatedly, source)
 
                 # Start the MWL server in the main thread
                 run_mwl_server(

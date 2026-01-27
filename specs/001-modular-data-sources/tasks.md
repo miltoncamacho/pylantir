@@ -88,15 +88,15 @@
 
 ### Implementation for User Story 2
 
-- [ ] T025 [US2] Implement parse_data_sources_config() function in src/pylantir/cli/run.py to extract and validate data_sources array
-- [ ] T026 [US2] Implement validate_source_config() function in src/pylantir/cli/run.py to check required fields (name, type, config, field_mapping)
-- [ ] T027 [US2] Create sync_single_source() wrapper function in src/pylantir/cli/run.py that loads plugin, validates config, and calls sync loop
-- [ ] T028 [US2] Implement multi-source orchestration using ThreadPoolExecutor in src/pylantir/cli/run.py main() function
-- [ ] T029 [US2] Add per-source thread spawning logic with one thread per enabled data source
-- [ ] T030 [US2] Implement per-source error handling with try/except around each plugin.fetch_entries() call
-- [ ] T031 [US2] Add source name logging prefix to all plugin operations (e.g., "[REDCap:main_redcap]")
-- [ ] T032 [US2] Update database insert logic to populate data_source field with source config name
-- [ ] T033 [US2] Implement graceful shutdown for multiple source threads using existing STOP_EVENT pattern
+- [x] T025 [US2] Implement parse_data_sources_config() function in src/pylantir/cli/run.py to extract and validate data_sources array ✅
+- [x] T026 [US2] Implement validate_source_config() function in src/pylantir/cli/run.py to check required fields (name, type, config, field_mapping) ✅
+- [x] T027 [US2] Create sync_single_source() wrapper function in src/pylantir/cli/run.py that loads plugin, validates config, and calls sync loop ✅
+- [x] T028 [US2] Implement multi-source orchestration using ThreadPoolExecutor in src/pylantir/cli/run.py main() function ✅
+- [x] T029 [US2] Add per-source thread spawning logic with one thread per enabled data source ✅
+- [x] T030 [US2] Implement per-source error handling with try/except around each plugin.fetch_entries() call ✅
+- [x] T031 [US2] Add source name logging prefix to all plugin operations (e.g., "[REDCap:main_redcap]") ✅
+- [x] T032 [US2] Update database insert logic to populate data_source field with source config name ✅
+- [x] T033 [US2] Implement graceful shutdown for multiple source threads using existing STOP_EVENT pattern ✅
 - [ ] T034 [US2] Test with configuration containing multiple REDCap sources (different sites/protocols)
 - [ ] T035 [US2] Verify source isolation: simulate one source failing, confirm others continue syncing
 - [ ] T036 [US2] Test per-source sync intervals (different sources with different intervals run independently)

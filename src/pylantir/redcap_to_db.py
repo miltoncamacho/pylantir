@@ -222,6 +222,7 @@ def sync_redcap_to_db(
     protocol: dict,
     redcap2wl: dict,
     interval: float = 60.0,
+    source_name: str = None,
 ) -> None:
     """
     LEGACY WRAPPER: Sync REDCap patient data with the worklist database.
@@ -233,8 +234,12 @@ def sync_redcap_to_db(
     NOTE: This function now uses REDCapPlugin internally via fetch_redcap_entries()
     wrapper, ensuring consistent behavior with the new plugin architecture.
 
-    MIGRATION PATH: Use data_sources configuration in mwl_config.json instead
-    of calling this function directly.
+    Args:
+        site_id: Site identifier
+        protocol: Protocol mapping dictionary
+        redcap2wl: Field mapping dictionary
+        interval: Sync interval in seconds
+        source_name: Optional data source name for tracking (new in v0.3.0)
     """
     lgr.warning(
         "sync_redcap_to_db() is deprecated. "
@@ -314,6 +319,9 @@ def sync_redcap_to_db(
                 existing_entry.modality = record.get("modality", "MR")
                 existing_entry.scheduled_start_date = record.get("mri_date")
                 existing_entry.scheduled_start_time = record.get("mri_time")
+                # Track data source if provided
+                if source_name:
+                    existing_entry.data_source = source_name
                 # Dynamically update DICOM worklist fields from REDCap
                 for redcap_field, dicom_field in redcap2wl.items():
                     if redcap_field in record:
@@ -348,7 +356,8 @@ def sync_redcap_to_db(
                     # performing_physician=record.get("performing_physician"),
                     study_description=record.get("study_description", "CPIP"),
                     # station_name=record.get("station_name"),
-                    performed_procedure_step_status="SCHEDULED"
+                    performed_procedure_step_status="SCHEDULED",
+                    data_source=source_name  # Track which source created this entry
                 )
                 session.add(new_entry)
 
@@ -382,6 +391,7 @@ def sync_redcap_to_db_repeatedly(
     redcap2wl=None,
     interval=60,
     operation_interval={"start_time": [00,00], "end_time": [23,59]},
+    source_name=None,
 ):
     """
     LEGACY WRAPPER: Keep syncing with REDCap in a loop every `interval` seconds.
@@ -452,6 +462,7 @@ def sync_redcap_to_db_repeatedly(
                         protocol=protocol,
                         redcap2wl=redcap2wl,
                         interval=extended_interval,
+                        source_name=source_name,
                     )
                 else:
                     sync_redcap_to_db(
@@ -459,6 +470,7 @@ def sync_redcap_to_db_repeatedly(
                         protocol=protocol,
                         redcap2wl=redcap2wl,
                         interval=interval_sync,
+                        source_name=source_name,
                     )
                 last_sync_date = today_date
                 logging.debug(f"REDCap sync completed at {now_time}. Next sync atempt in {interval} seconds.")
