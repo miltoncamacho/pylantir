@@ -371,10 +371,9 @@ def main() -> None:
                     lgr.info(f"[{source_name}] Starting sync loop (interval: {sync_interval}s)")
 
                     # Import database and sync utilities
-                    from ..redcap_to_db import (
-                        Session, WorklistItem, generate_instance_uid,
-                        convert_weight, cleanup_memory_and_connections, get_memory_usage
-                    )
+                    from ..db_setup import Session
+                    from ..models import WorklistItem
+                    from ..redcap_to_db import generate_instance_uid, cleanup_memory_and_connections
                     from datetime import datetime, time as dt_time, timedelta
                     import logging
 
@@ -413,7 +412,7 @@ def main() -> None:
                             # Fetch entries using plugin
                             try:
                                 fetch_interval = extended_interval if is_first_run else interval_sync
-                                field_mapping = source_config.get("field_mapping", {})
+                                field_mapping = source_config.get("field_mapping") or source_config.get("config", {}).get("field_mapping", {})
 
                                 lgr.debug(f"[{source_name}] Fetching entries (interval: {fetch_interval}s)")
                                 entries = plugin.fetch_entries(
@@ -431,39 +430,71 @@ def main() -> None:
                                     # Process entries (source-agnostic)
                                     session = Session()
                                     try:
-                                        for record in entries:
-                                            # This is still REDCap-specific logic
-                                            # TODO: Move this to plugin's transform method
-                                            study_id = record.get("study_id", "").split('-')[-1] if record.get("study_id") else None
-                                            family_id = record.get("family_id", "").split('-')[-1] if record.get("family_id") else None
-                                            ses_id = record.get("mri_instance")
+                                        def _format_date(value):
+                                            if value is None:
+                                                return None
+                                            if hasattr(value, "strftime"):
+                                                return value.strftime("%Y%m%d")
+                                            value_str = str(value)
+                                            if "-" in value_str and len(value_str) >= 10:
+                                                return value_str[:10].replace("-", "")
+                                            return value_str
 
-                                            if not study_id:
+                                        def _format_time(value):
+                                            if value is None:
+                                                return None
+                                            if hasattr(value, "strftime"):
+                                                return value.strftime("%H%M%S")
+                                            value_str = str(value)
+                                            if ":" in value_str:
+                                                parts = value_str.split(":")
+                                                if len(parts) >= 2:
+                                                    hh = parts[0].zfill(2)
+                                                    mm = parts[1].zfill(2)
+                                                    ss = parts[2].zfill(2) if len(parts) >= 3 else "00"
+                                                    return f"{hh}{mm}{ss}"
+                                            return value_str
+
+                                        for record in entries:
+                                            patient_id = record.get("patient_id")
+                                            lgr.info(f"[{source_name}] Processing record for patient_id: {patient_id}")
+                                            if not patient_id:
+                                                lgr.info(f"[{source_name}] Skipping record with missing patient_id")
                                                 continue
 
-                                            PatientName = f"cpip-id-{study_id}^fa-{family_id}"
-                                            PatientID = f"sub_{study_id}_ses_{ses_id}_fam_{family_id}_site_{site_id}"
+                                            existing_entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
 
-                                            # Check for existing entry
-                                            existing_entry = session.query(WorklistItem).filter_by(patient_id=PatientID).first()
+                                            scheduled_start_date = _format_date(record.get("scheduled_start_date"))
+                                            scheduled_start_time = _format_time(record.get("scheduled_start_time"))
 
                                             if existing_entry:
-                                                existing_entry.data_source = source_name
-                                                existing_entry.scheduled_start_date = record.get("mri_date")
-                                                existing_entry.scheduled_start_time = record.get("mri_time")
+                                                existing_entry.data_source = record.get("data_source") or source_name
+                                                existing_entry.scheduled_start_date = scheduled_start_date
+                                                existing_entry.scheduled_start_time = scheduled_start_time
                                             else:
                                                 new_entry = WorklistItem(
-                                                    study_instance_uid=generate_instance_uid(),
-                                                    patient_name=PatientName,
-                                                    patient_id=PatientID,
-                                                    patient_birth_date=f"{record.get('youth_dob_y', '2012')}0101",
-                                                    patient_sex=record.get("demo_sex"),
+                                                    study_instance_uid=record.get("study_instance_uid") or generate_instance_uid(),
+                                                    patient_name=record.get("patient_name"),
+                                                    patient_id=patient_id,
+                                                    patient_birth_date=record.get("patient_birth_date"),
+                                                    patient_sex=record.get("patient_sex"),
+                                                    patient_weight_lb=record.get("patient_weight_lb"),
+                                                    accession_number=record.get("accession_number"),
+                                                    referring_physician_name=record.get("referring_physician_name"),
                                                     modality=record.get("modality", "MR"),
-                                                    scheduled_start_date=record.get("mri_date"),
-                                                    scheduled_start_time=record.get("mri_time"),
-                                                    protocol_name=protocol.get(site_id, "DEFAULT_PROTOCOL"),
-                                                    performed_procedure_step_status="SCHEDULED",
-                                                    data_source=source_name
+                                                    study_description=record.get("study_description"),
+                                                    scheduled_station_aetitle=record.get("scheduled_station_aetitle"),
+                                                    scheduled_start_date=scheduled_start_date,
+                                                    scheduled_start_time=scheduled_start_time,
+                                                    performing_physician=record.get("performing_physician"),
+                                                    procedure_description=record.get("procedure_description"),
+                                                    protocol_name=record.get("protocol_name") or protocol.get(site_id, "DEFAULT_PROTOCOL"),
+                                                    station_name=record.get("station_name"),
+                                                    hisris_coding_designator=record.get("hisris_coding_designator"),
+                                                    performed_procedure_step_status=record.get(
+                                                        "performed_procedure_step_status"
+                                                    ) or "SCHEDULED",
+                                                    data_source=record.get("data_source") or source_name
                                                 )
                                                 session.add(new_entry)
 

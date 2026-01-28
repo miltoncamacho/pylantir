@@ -40,6 +40,8 @@ class REDCapPlugin(DataSourcePlugin):
         super().__init__()
         self._api_url = None
         self._api_token = None
+        self._site_id = None
+        self._protocol = None
 
     def validate_config(self, config: Dict) -> Tuple[bool, str]:
         """Validate REDCap plugin configuration."""
@@ -63,6 +65,9 @@ class REDCapPlugin(DataSourcePlugin):
 
         if not self._api_token:
             return (False, "REDCAP_API_TOKEN environment variable not set")
+
+        self._site_id = config.get("site_id")
+        self._protocol = config.get("protocol")
 
         self.logger.info(f"REDCap plugin validated for site {config['site_id']}")
         return (True, "")
@@ -267,6 +272,19 @@ class REDCapPlugin(DataSourcePlugin):
             for source_field, target_field in field_mapping.items():
                 if source_field in record and record[source_field] not in (None, '', 'NaN'):
                     entry[target_field] = record[source_field]
+
+            # Ensure scheduled_start_date/time are populated for generic insertion
+            if "scheduled_start_date" not in entry:
+                entry["scheduled_start_date"] = record.get("mri_date") or record.get("scheduled_date")
+            if "scheduled_start_time" not in entry:
+                entry["scheduled_start_time"] = record.get("mri_time") or record.get("scheduled_time")
+
+            # Apply protocol name when available
+            if "protocol_name" not in entry and self._protocol is not None:
+                if isinstance(self._protocol, str):
+                    entry["protocol_name"] = self._protocol
+                elif self._site_id and isinstance(self._protocol, dict):
+                    entry["protocol_name"] = self._protocol.get(self._site_id)
 
             entries.append(entry)
 

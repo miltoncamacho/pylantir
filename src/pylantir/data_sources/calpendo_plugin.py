@@ -129,6 +129,20 @@ class CalendoPlugin(DataSourcePlugin):
         the lookback period, applies change detection to minimize DB writes.
         """
         try:
+            # Validate field mapping presence
+            if not field_mapping:
+                field_mapping = self._config.get("field_mapping", {}) if self._config else {}
+                self.logger.warning(
+                    "No field_mapping provided to Calpendo plugin. "
+                    "config_field_mapping_keys=%s",
+                    list(field_mapping.keys()),
+                )
+            else:
+                self.logger.info(
+                    "Calpendo field_mapping keys: %s",
+                    list(field_mapping.keys()),
+                )
+
             # Calculate rolling window
             now = datetime.now(self._timezone)
             window_mode = self._config.get("window_mode")
@@ -267,6 +281,20 @@ class CalendoPlugin(DataSourcePlugin):
             )
 
             booking = response.json()
+
+            properties = booking.get("properties") if isinstance(booking.get("properties"), dict) else {}
+            self.logger.info(
+                "Calpendo booking payload summary for %s: biskitType=%s keys=%s properties_keys=%s title=%s properties.title=%s formattedName=%s dateRange=%s status=%s",
+                booking_id,
+                booking.get("biskitType"),
+                list(booking.keys()),
+                list(properties.keys()) if isinstance(properties, dict) else None,
+                booking.get("title"),
+                properties.get("title") if isinstance(properties, dict) else None,
+                booking.get("formattedName"),
+                properties.get("dateRange") if isinstance(properties, dict) else None,
+                properties.get("status") if isinstance(properties, dict) else booking.get("status"),
+            )
 
             # Fetch operator for MRIScan
             if booking.get("biskitType") == "MRIScan":
@@ -415,7 +443,40 @@ class CalendoPlugin(DataSourcePlugin):
             else:
                 return None
 
+        if value is None and len(keys) == 1 and isinstance(data, dict):
+            properties = data.get("properties")
+            if isinstance(properties, dict) and key_path in properties:
+                value = properties.get(key_path)
+
         return str(value) if value is not None else None
+
+    def _parse_date_range_dates(self, date_range: Dict) -> Optional[Tuple[datetime, datetime]]:
+        """Parse dateRange.start/end into timezone-aware datetimes."""
+        if not isinstance(date_range, dict):
+            return None
+
+        start_str = date_range.get("start")
+        end_str = date_range.get("end") or date_range.get("finish")
+
+        if not start_str or not end_str:
+            return None
+
+        def _parse_iso(value: str) -> Optional[datetime]:
+            try:
+                normalized = value.replace("Z", "+00:00")
+                dt = datetime.fromisoformat(normalized)
+                if dt.tzinfo is None:
+                    dt = self._timezone.localize(dt)
+                return dt
+            except Exception:
+                return None
+
+        start_dt = _parse_iso(start_str)
+        end_dt = _parse_iso(end_str)
+
+        if start_dt and end_dt:
+            return (start_dt, end_dt)
+        return None
 
     def _transform_booking_to_entry(
         self,
@@ -439,17 +500,52 @@ class CalendoPlugin(DataSourcePlugin):
                 source_key = mapping_config.get("source_field")
                 if source_key:
                     source_value = self._get_nested_value(booking, source_key)
+                    self.logger.info(
+                        "Calpendo mapping: target=%s source=%s raw_value=%s",
+                        target_field,
+                        source_key,
+                        source_value,
+                    )
 
                 # Apply regex extraction if configured
                 if source_value and "_extract" in mapping_config:
                     source_value = self._extract_field_with_regex(
                         source_value, mapping_config["_extract"]
                     )
+                    self.logger.info(
+                        "Calpendo extraction: target=%s extracted_value=%s",
+                        target_field,
+                        source_value,
+                    )
             else:
                 # Simple string mapping
                 source_value = self._get_nested_value(booking, mapping_config)
+                self.logger.info(
+                    "Calpendo mapping: target=%s source=%s raw_value=%s",
+                    target_field,
+                    mapping_config,
+                    source_value,
+                )
 
             entry[target_field] = source_value
+
+        # Fallback to properties.title if patient_id/patient_name still missing
+        properties_title = None
+        if isinstance(booking.get("properties"), dict):
+            properties_title = booking.get("properties", {}).get("title")
+
+        booking_title = booking.get("title")
+
+        if properties_title is not None and not str(properties_title).strip():
+            properties_title = None
+        if booking_title is not None and not str(booking_title).strip():
+            booking_title = None
+
+        if not entry.get("patient_id"):
+            entry["patient_id"] = properties_title or booking_title
+
+        if not entry.get("patient_name"):
+            entry["patient_name"] = properties_title or booking_title
 
         # Extract and convert date/time from formattedName
         formatted_name = booking.get("formattedName")
@@ -470,11 +566,37 @@ class CalendoPlugin(DataSourcePlugin):
                 self.logger.warning(
                     f"Failed to parse formattedName for booking {booking.get('id')}: {e}"
                 )
+        else:
+            date_range = self._get_nested_value(booking, "properties.dateRange")
+            parsed = self._parse_date_range_dates(booking.get("properties", {}).get("dateRange"))
+            if parsed:
+                start_dt, end_dt = parsed
+                self.logger.info(
+                    "Calpendo dateRange parsed: booking_id=%s start=%s end=%s",
+                    booking.get("id"),
+                    start_dt,
+                    end_dt,
+                )
+                start_utc = self._convert_to_utc(start_dt)
+                end_utc = self._convert_to_utc(end_dt)
+
+                entry["scheduled_start_date"] = start_utc.date()
+                entry["scheduled_start_time"] = start_utc.time()
+
+                duration = (end_utc - start_utc).total_seconds() / 60
+                entry["scheduled_procedure_step_duration"] = int(duration)
+            else:
+                self.logger.warning(
+                    "Booking %s missing formattedName and parsable dateRange; dateRange=%s",
+                    booking.get("id"),
+                    date_range,
+                )
 
         # Map status
-        if "status" in booking:
+        status_value = booking.get("status") or self._get_nested_value(booking, "properties.status")
+        if status_value:
             entry["performed_procedure_step_status"] = self._map_status_to_dicom(
-                booking["status"]
+                status_value
             )
 
         # Map resource to modality
@@ -493,9 +615,37 @@ class CalendoPlugin(DataSourcePlugin):
         required = ["patient_id", "scheduled_start_date", "scheduled_start_time"]
         for field in required:
             if not entry.get(field):
-                self.logger.warning(
-                    f"Booking {booking.get('id')} missing required field '{field}', skipping"
-                )
+                booking_id = booking.get("id")
+                if field == "patient_id":
+                    title_value = booking.get("title")
+                    properties_title_value = None
+                    if isinstance(booking.get("properties"), dict):
+                        properties_title_value = booking.get("properties", {}).get("title")
+                    if not title_value:
+                        title_value = properties_title_value
+                    mapping_config = field_mapping.get("patient_id")
+                    self.logger.warning(
+                        "Booking %s missing required field '%s', skipping. "
+                        "title=%s properties_title=%s mapping=%s extracted_patient_id=%s extracted_patient_name=%s "
+                        "field_mapping_keys=%s booking_keys=%s properties_keys=%s biskitType=%s",
+                        booking_id,
+                        field,
+                        title_value,
+                        properties_title_value,
+                        mapping_config,
+                        entry.get("patient_id"),
+                        entry.get("patient_name"),
+                        list(field_mapping.keys()),
+                        list(booking.keys()),
+                        list(booking.get("properties", {}).keys()) if isinstance(booking.get("properties"), dict) else None,
+                        booking.get("biskitType"),
+                    )
+                else:
+                    self.logger.warning(
+                        "Booking %s missing required field '%s', skipping",
+                        booking_id,
+                        field,
+                    )
                 return None
 
         return entry
