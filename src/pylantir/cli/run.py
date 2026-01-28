@@ -356,7 +356,15 @@ def main() -> None:
                     plugin = PluginClass()
 
                     # Validate plugin configuration
-                    is_valid, error_msg = plugin.validate_config(source_config.get("config", {}))
+                    plugin_config = dict(source_config.get("config", {}))
+                    if "field_mapping" in source_config:
+                        plugin_config["field_mapping"] = source_config.get("field_mapping")
+                    if "window_mode" in source_config:
+                        plugin_config["window_mode"] = source_config.get("window_mode")
+                    if "daily_window" in source_config:
+                        plugin_config["daily_window"] = source_config.get("daily_window")
+
+                    is_valid, error_msg = plugin.validate_config(plugin_config)
                     if not is_valid:
                         lgr.error(f"[{source_name}] Configuration validation failed: {error_msg}")
                         return
@@ -406,13 +414,13 @@ def main() -> None:
                                 delta = dt_start_today - dt_end_yesterday
                                 extended_interval = delta.total_seconds()
                                 # temporary increase interval to cover gap since last sync
-                                # extended_interval += 60
+                                extended_interval += 60000
                                 logging.info(f"[{source_name}] First sync of the day at {now_time}")
 
                             # Fetch entries using plugin
                             try:
                                 fetch_interval = extended_interval if is_first_run else interval_sync
-                                field_mapping = source_config.get("field_mapping") or source_config.get("config", {}).get("field_mapping", {})
+                                field_mapping = source_config.get("field_mapping", {})
 
                                 lgr.debug(f"[{source_name}] Fetching entries (interval: {fetch_interval}s)")
                                 entries = plugin.fetch_entries(
