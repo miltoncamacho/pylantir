@@ -99,6 +99,16 @@ class CalendoPlugin(DataSourcePlugin):
         if not isinstance(lookback_multiplier, (int, float)) or lookback_multiplier <= 0:
             return (False, "lookback_multiplier must be a positive number")
 
+        allowed_studies = config.get("allowed_studies")
+        if allowed_studies is not None:
+            if not isinstance(allowed_studies, list) or not all(
+                isinstance(item, str) and item.strip() for item in allowed_studies
+            ):
+                return (False, "allowed_studies must be a non-empty list of strings")
+            config["allowed_studies"] = [item.strip() for item in allowed_studies if item.strip()]
+            if not config["allowed_studies"]:
+                return (False, "allowed_studies must be a non-empty list of strings")
+
         # Validate timezone
         timezone_str = config.get("timezone", "America/Edmonton")
         try:
@@ -546,6 +556,19 @@ class CalendoPlugin(DataSourcePlugin):
 
         if not entry.get("patient_name"):
             entry["patient_name"] = properties_title or booking_title
+
+        allowed_studies = self._config.get("allowed_studies") if self._config else None
+        if allowed_studies:
+            study_description = entry.get("study_description")
+            normalized_description = study_description.strip() if isinstance(study_description, str) else None
+            if not normalized_description or normalized_description not in allowed_studies:
+                self.logger.info(
+                    "Skipping booking %s: study_description not allowed (value=%s allowed=%s)",
+                    booking.get("id"),
+                    study_description,
+                    allowed_studies,
+                )
+                return None
 
         # Extract and convert date/time from formattedName
         formatted_name = booking.get("formattedName")
