@@ -1,7 +1,7 @@
 # Data Model: Calpendo Data Source Plugin
 
-**Feature**: 002-calpendo-plugin  
-**Date**: 2026-01-27  
+**Feature**: 002-calpendo-plugin
+**Date**: 2026-01-27
 **Purpose**: Define data entities, transformations, and mappings between Calpendo bookings and DICOM worklist items
 
 ---
@@ -21,8 +21,8 @@ Calpendo Booking (API Response)
 
 ## Source Entity: Calpendo Booking
 
-**Source**: Calpendo API `/webdav/b/Calpendo.Booking/{id}`  
-**Format**: JSON response  
+**Source**: Calpendo API `/webdav/b/Calpendo.Booking/{id}`
+**Format**: JSON response
 **Lifecycle**: Fetched during sync, transformed, discarded (not persisted)
 
 ### Core Fields
@@ -63,7 +63,7 @@ Calpendo Booking (API Response)
 **Purpose**: Extract multiple subfields from composite Calpendo fields
 
 #### Title Extraction
-**Input**: `"SUB001 - John Doe"`  
+**Input**: `"SUB001 - John Doe"`
 **Pattern Config**:
 ```json
 {
@@ -84,7 +84,7 @@ Calpendo Booking (API Response)
 - Extra hyphens: `"SUB001 - Jane Doe-Smith"` → `patient_name="Jane Doe-Smith"` (greedy match)
 
 #### Study Name Extraction
-**Input**: `"BRISKP (Brain network models for understanding Risk)"`  
+**Input**: `"BRISKP (Brain network models for understanding Risk)"`
 **Pattern Config**:
 ```json
 {
@@ -99,7 +99,7 @@ Calpendo Booking (API Response)
 - `study_description`: `"BRISKP "` (note trailing space, stripped during processing)
 
 #### DateTime Range Extraction
-**Input**: `"[2025-02-12 10:00:00.0, 2025-02-12 11:00:00.0]"`  
+**Input**: `"[2025-02-12 10:00:00.0, 2025-02-12 11:00:00.0]"`
 **Pattern Config**:
 ```json
 {
@@ -234,8 +234,8 @@ def map_resource_to_modality(resource_name: str, mapping: dict) -> str:
 
 ## Target Entity: WorklistItem
 
-**Storage**: SQLite database via SQLAlchemy ORM  
-**Schema**: Existing model (no changes)  
+**Storage**: SQLite database via SQLAlchemy ORM
+**Schema**: Existing model (no changes)
 **Lifecycle**: INSERT (new booking), UPDATE (changed booking), soft-delete (mark as DISCONTINUED)
 
 ### Field Mappings
@@ -285,7 +285,7 @@ import json
 def compute_booking_hash(booking: dict) -> str:
     """
     Compute SHA256 hash of critical fields.
-    
+
     Changes to these fields trigger DB update:
     - title (patient info)
     - status
@@ -294,7 +294,7 @@ def compute_booking_hash(booking: dict) -> str:
     - resource (scanner)
     """
     properties = booking.get('properties', {})
-    
+
     critical_data = {
         'title': booking.get('title'),
         'status': booking.get('status'),
@@ -302,7 +302,7 @@ def compute_booking_hash(booking: dict) -> str:
         'project': properties.get('project', {}).get('formattedName'),
         'resource': properties.get('resource', {}).get('formattedName')
     }
-    
+
     json_str = json.dumps(critical_data, sort_keys=True)
     return hashlib.sha256(json_str.encode()).hexdigest()
 ```

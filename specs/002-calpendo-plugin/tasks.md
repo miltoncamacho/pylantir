@@ -1,12 +1,12 @@
 # Implementation Tasks: Calpendo Data Source Plugin
 
-**Feature**: 002-calpendo-plugin | **Created**: 2026-01-27  
+**Feature**: 002-calpendo-plugin | **Created**: 2026-01-27
 **Prerequisites**: [research.md](research.md), [data-model.md](data-model.md), [contracts/calpendo-api.md](contracts/calpendo-api.md)
 
 ## Task Overview
 
-**Total Tasks**: 25  
-**Estimated Effort**: 16-20 hours  
+**Total Tasks**: 25
+**Estimated Effort**: 16-20 hours
 **Critical Path**: T001 → T002 → T006 → T007 → T011 → T012 → T016 → T023
 
 ### Task Categories
@@ -21,8 +21,8 @@
 ## Category 1: Core Plugin Implementation
 
 ### T001: Create CalendoPlugin Class Scaffolding
-**Priority**: P0 (Critical Path)  
-**Effort**: 1 hour  
+**Priority**: P0 (Critical Path)
+**Effort**: 1 hour
 **Dependencies**: None
 
 **Description**:
@@ -51,8 +51,8 @@ Create the base `CalendoPlugin` class implementing the `DataSourcePlugin` interf
 ---
 
 ### T002: Implement Configuration Validation
-**Priority**: P0 (Critical Path)  
-**Effort**: 1.5 hours  
+**Priority**: P0 (Critical Path)
+**Effort**: 1.5 hours
 **Dependencies**: T001
 
 **Description**:
@@ -91,29 +91,29 @@ def validate_config(self) -> None:
     # Check required config fields
     if "base_url" not in self.config:
         raise PluginConfigError("Missing required field: base_url")
-    
+
     if "resources" not in self.config or not isinstance(self.config["resources"], list):
         raise PluginConfigError("'resources' must be a non-empty list")
-    
+
     # Check environment variables
     if not os.getenv("CALPENDO_USERNAME") or not os.getenv("CALPENDO_PASSWORD"):
         raise PluginConfigError("CALPENDO_USERNAME and CALPENDO_PASSWORD env vars required")
-    
+
     # Validate field_mapping structure
     field_mapping = self.config.get("field_mapping", {})
     for target_field, mapping in field_mapping.items():
         if isinstance(mapping, dict) and "_extract" in mapping:
             # Validate extraction pattern structure
             pass
-    
+
     self.lgr.info(f"Configuration validated: {len(self.config['resources'])} resources")
 ```
 
 ---
 
 ### T003: Implement fetch_entries() Main Method
-**Priority**: P0 (Critical Path)  
-**Effort**: 1 hour  
+**Priority**: P0 (Critical Path)
+**Effort**: 1 hour
 **Dependencies**: T001, T002
 
 **Description**:
@@ -154,24 +154,24 @@ def fetch_entries(self, sync_interval: int) -> List[Dict[str, Any]]:
         now = datetime.now(tz)
         start_time = now - timedelta(seconds=sync_interval * lookback_multiplier)
         end_time = now + timedelta(hours=24)
-        
+
         # Fetch bookings
         booking_ids = self._fetch_bookings_in_window(start_time, end_time)
         self.lgr.info(f"Found {len(booking_ids)} bookings in window")
-        
+
         # Fetch details in parallel
         bookings = self._fetch_booking_details_parallel(booking_ids)
-        
+
         # Transform and filter
         entries = []
         for booking in bookings:
             entry = self._transform_booking_to_entry(booking)
             if entry:  # Skip invalid bookings
                 entries.append(entry)
-        
+
         self.lgr.info(f"Transformed {len(entries)} valid worklist entries")
         return entries
-        
+
     except Exception as e:
         self.lgr.error(f"Failed to fetch entries: {e}")
         raise PluginFetchError(f"Calpendo fetch failed: {e}") from e
@@ -180,8 +180,8 @@ def fetch_entries(self, sync_interval: int) -> List[Dict[str, Any]]:
 ---
 
 ### T004: Implement Error Handling Classes
-**Priority**: P1  
-**Effort**: 0.5 hours  
+**Priority**: P1
+**Effort**: 0.5 hours
 **Dependencies**: None
 
 **Description**:
@@ -208,8 +208,8 @@ Create custom exception classes for plugin-specific errors following the pattern
 ---
 
 ### T005: Implement Logging Infrastructure
-**Priority**: P1  
-**Effort**: 0.5 hours  
+**Priority**: P1
+**Effort**: 0.5 hours
 **Dependencies**: T001
 
 **Description**:
@@ -240,8 +240,8 @@ Set up structured logging throughout the plugin with appropriate log levels: DEB
 ## Category 2: API Integration
 
 ### T006: Implement Booking Query Construction
-**Priority**: P0 (Critical Path)  
-**Effort**: 1 hour  
+**Priority**: P0 (Critical Path)
+**Effort**: 1 hour
 **Dependencies**: T001
 
 **Description**:
@@ -278,21 +278,21 @@ def _build_booking_query(self, start_time: datetime, end_time: datetime) -> str:
     # Format dates
     start_str = start_time.strftime("%Y%m%d-%H%M")
     end_str = end_time.strftime("%Y%m%d-%H%M")
-    
+
     # Date range (AND)
     query_parts = [f"AND/dateRange.start/GE/{start_str}/dateRange.start/LT/{end_str}"]
-    
+
     # Resource filter (OR)
     resources = self.config.get("resources", [])
     if resources:
         resource_query = "OR/" + "/".join([f"resource.name/EQ/{r}" for r in resources])
         query_parts.append(resource_query)
-    
+
     # Status filter (AND)
     status_filter = self.config.get("status_filter")
     if status_filter:
         query_parts.append(f"AND/status/EQ/{status_filter}")
-    
+
     query = "/".join(query_parts)
     self.lgr.debug(f"Built query: {query}")
     return query
@@ -301,8 +301,8 @@ def _build_booking_query(self, start_time: datetime, end_time: datetime) -> str:
 ---
 
 ### T007: Implement Booking Fetching
-**Priority**: P0 (Critical Path)  
-**Effort**: 1 hour  
+**Priority**: P0 (Critical Path)
+**Effort**: 1 hour
 **Dependencies**: T006
 
 **Description**:
@@ -339,19 +339,19 @@ def _fetch_bookings_in_window(self, start_time: datetime, end_time: datetime) ->
     """Query Calpendo for booking IDs in time window."""
     query = self._build_booking_query(start_time, end_time)
     url = f"{self.config['base_url']}/webdav/q/Calpendo.Booking/{query}"
-    
+
     auth = (os.getenv("CALPENDO_USERNAME"), os.getenv("CALPENDO_PASSWORD"))
-    
+
     try:
         response = requests.get(url, auth=auth, timeout=30)
         response.raise_for_status()
-        
+
         data = response.json()
         booking_ids = [b["id"] for b in data.get("biskits", [])]
-        
+
         self.lgr.debug(f"Fetched {len(booking_ids)} booking IDs")
         return booking_ids
-        
+
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 401:
             raise PluginFetchError("Calpendo authentication failed") from e
@@ -363,8 +363,8 @@ def _fetch_bookings_in_window(self, start_time: datetime, end_time: datetime) ->
 ---
 
 ### T008: Implement Booking Detail Fetching
-**Priority**: P0 (Critical Path)  
-**Effort**: 1 hour  
+**Priority**: P0 (Critical Path)
+**Effort**: 1 hour
 **Dependencies**: T007
 
 **Description**:
@@ -400,24 +400,24 @@ def _fetch_booking_details(self, booking_id: int) -> Optional[dict]:
     """Fetch detailed booking information."""
     url = f"{self.config['base_url']}/webdav/b/Calpendo.Booking/{booking_id}"
     auth = (os.getenv("CALPENDO_USERNAME"), os.getenv("CALPENDO_PASSWORD"))
-    
+
     try:
         response = requests.get(url, auth=auth, timeout=10)
         if response.status_code == 404:
             self.lgr.warning(f"Booking {booking_id} not found (deleted?)")
             return None
         response.raise_for_status()
-        
+
         booking = response.json()
-        
+
         # Fetch operator for MRIScan
         if booking.get("biskitType") == "MRIScan":
             operator = self._fetch_mri_operator(booking_id)
             if operator:
                 booking["operator"] = operator
-        
+
         return booking
-        
+
     except Exception as e:
         self.lgr.error(f"Failed to fetch booking {booking_id}: {e}")
         raise PluginFetchError(f"Booking detail fetch failed: {e}") from e
@@ -426,8 +426,8 @@ def _fetch_booking_details(self, booking_id: int) -> Optional[dict]:
 ---
 
 ### T009: Implement Parallel Detail Fetching
-**Priority**: P1  
-**Effort**: 0.5 hours  
+**Priority**: P1
+**Effort**: 0.5 hours
 **Dependencies**: T008
 
 **Description**:
@@ -460,10 +460,10 @@ def _fetch_booking_details_parallel(self, booking_ids: List[int]) -> List[dict]:
     """Fetch booking details in parallel."""
     with ThreadPoolExecutor(max_workers=5) as executor:
         results = list(executor.map(self._fetch_booking_details, booking_ids))
-    
+
     # Filter out None (deleted bookings)
     bookings = [b for b in results if b is not None]
-    
+
     self.lgr.info(f"Fetched {len(bookings)}/{len(booking_ids)} booking details")
     return bookings
 ```
@@ -471,8 +471,8 @@ def _fetch_booking_details_parallel(self, booking_ids: List[int]) -> List[dict]:
 ---
 
 ### T010: Implement MRI Operator Fetching
-**Priority**: P2  
-**Effort**: 0.5 hours  
+**Priority**: P2
+**Effort**: 0.5 hours
 **Dependencies**: T008
 
 **Description**:
@@ -502,8 +502,8 @@ Implement `_fetch_mri_operator()` to retrieve operator name for MRIScan bookings
 ## Category 3: Data Transformation
 
 ### T011: Implement Regex Field Extraction
-**Priority**: P0 (Critical Path)  
-**Effort**: 1.5 hours  
+**Priority**: P0 (Critical Path)
+**Effort**: 1.5 hours
 **Dependencies**: T001
 
 **Description**:
@@ -540,20 +540,20 @@ def _extract_field_with_regex(self, source_value: str, extract_config: dict) -> 
     """Apply regex pattern to extract field value."""
     if not source_value:
         return ""
-    
+
     pattern_str = extract_config.get("pattern")
     group_num = extract_config.get("group", 0)
-    
+
     try:
         pattern = re.compile(pattern_str)
         match = pattern.match(source_value)
-        
+
         if match:
             return match.group(group_num)
         else:
             self.lgr.warning(f"Regex no match for '{source_value}', using original")
             return source_value
-            
+
     except Exception as e:
         raise PluginConfigError(f"Invalid regex pattern '{pattern_str}': {e}") from e
 ```
@@ -561,8 +561,8 @@ def _extract_field_with_regex(self, source_value: str, extract_config: dict) -> 
 ---
 
 ### T012: Implement Timezone Conversion Utilities
-**Priority**: P0 (Critical Path)  
-**Effort**: 1 hour  
+**Priority**: P0 (Critical Path)
+**Effort**: 1 hour
 **Dependencies**: T001
 
 **Description**:
@@ -599,19 +599,19 @@ def _parse_formatted_name_dates(self, formatted_name: str) -> Tuple[datetime, da
     # Format: "[2026-01-27 14:00:00.0, 2026-01-27 15:30:00.0]"
     pattern = r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+), (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\]"
     match = re.match(pattern, formatted_name)
-    
+
     if not match:
         raise ValueError(f"Invalid formattedName format: {formatted_name}")
-    
+
     tz = pytz.timezone(self.config.get("timezone", "America/Edmonton"))
-    
+
     start_str, end_str = match.groups()
     start_naive = datetime.strptime(start_str, "%Y-%m-%d %H:%M:%S.%f")
     end_naive = datetime.strptime(end_str, "%Y-%m-%d %H:%M:%S.%f")
-    
+
     start_dt = tz.localize(start_naive)
     end_dt = tz.localize(end_naive)
-    
+
     return start_dt, end_dt
 
 def _convert_to_utc(self, dt: datetime) -> datetime:
@@ -622,8 +622,8 @@ def _convert_to_utc(self, dt: datetime) -> datetime:
 ---
 
 ### T013: Implement Status and Resource Mapping
-**Priority**: P1  
-**Effort**: 0.5 hours  
+**Priority**: P1
+**Effort**: 0.5 hours
 **Dependencies**: T001
 
 **Description**:
@@ -672,16 +672,16 @@ def _map_status_to_dicom(self, calpendo_status: str) -> str:
 def _map_resource_to_modality(self, resource_name: str) -> str:
     """Map resource name to modality code."""
     mapping = self.config.get("resource_modality_mapping", {})
-    
+
     # Exact match
     if resource_name in mapping:
         return mapping[resource_name]
-    
+
     # Prefix match
     for prefix, modality in mapping.items():
         if resource_name.startswith(prefix):
             return modality
-    
+
     # Default to resource name
     return resource_name
 ```
@@ -689,8 +689,8 @@ def _map_resource_to_modality(self, resource_name: str) -> str:
 ---
 
 ### T014: Implement Booking to Entry Transformation
-**Priority**: P0 (Critical Path)  
-**Effort**: 1.5 hours  
+**Priority**: P0 (Critical Path)
+**Effort**: 1.5 hours
 **Dependencies**: T011, T012, T013
 
 **Description**:
@@ -729,13 +729,13 @@ def _transform_booking_to_entry(self, booking: dict) -> Optional[Dict[str, Any]]
     """Transform Calpendo booking to worklist entry."""
     entry = {"data_source": self.source_name}
     field_mapping = self.config.get("field_mapping", {})
-    
+
     for target_field, mapping_config in field_mapping.items():
         # Extract source value (support nested keys)
         if isinstance(mapping_config, dict):
             source_key = mapping_config.get("source_field")
             source_value = self._get_nested_value(booking, source_key)
-            
+
             # Apply regex extraction if configured
             if "_extract" in mapping_config:
                 source_value = self._extract_field_with_regex(
@@ -744,30 +744,30 @@ def _transform_booking_to_entry(self, booking: dict) -> Optional[Dict[str, Any]]
         else:
             # Simple string mapping
             source_value = self._get_nested_value(booking, mapping_config)
-        
+
         entry[target_field] = source_value
-    
+
     # Apply transformations
     if "formattedName" in booking:
         start_dt, end_dt = self._parse_formatted_name_dates(booking["formattedName"])
         entry["scheduled_start_date"] = self._convert_to_utc(start_dt).date()
         entry["scheduled_start_time"] = self._convert_to_utc(start_dt).time()
-    
+
     # Validate required fields
     required = ["patient_id", "scheduled_start_date", "scheduled_start_time"]
     for field in required:
         if not entry.get(field):
             self.lgr.warning(f"Booking {booking.get('id')} missing {field}, skipping")
             return None
-    
+
     return entry
 ```
 
 ---
 
 ### T015: Implement Change Detection (Hashing)
-**Priority**: P1  
-**Effort**: 0.5 hours  
+**Priority**: P1
+**Effort**: 0.5 hours
 **Dependencies**: T014
 
 **Description**:
@@ -806,7 +806,7 @@ def _compute_booking_hash(self, booking: dict) -> str:
         "project": booking.get("properties", {}).get("project", {}).get("formattedName", ""),
         "resource": booking.get("properties", {}).get("resource", {}).get("formattedName", ""),
     }
-    
+
     json_str = json.dumps(critical_fields, sort_keys=True)
     hash_hex = hashlib.sha256(json_str.encode()).hexdigest()
     return hash_hex
@@ -817,8 +817,8 @@ def _compute_booking_hash(self, booking: dict) -> str:
 ## Category 4: Testing
 
 ### T016: Create Unit Tests for Configuration Validation
-**Priority**: P0 (Critical Path)  
-**Effort**: 1 hour  
+**Priority**: P0 (Critical Path)
+**Effort**: 1 hour
 **Dependencies**: T002
 
 **Description**:
@@ -848,8 +848,8 @@ pytest tests/test_calpendo_plugin.py::TestConfigValidation -v
 ---
 
 ### T017: Create Integration Tests with Mock API
-**Priority**: P0 (Critical Path)  
-**Effort**: 2 hours  
+**Priority**: P0 (Critical Path)
+**Effort**: 2 hours
 **Dependencies**: T003, T007, T008
 
 **Description**:
@@ -881,8 +881,8 @@ pytest tests/test_calpendo_integration.py -v
 ---
 
 ### T018: Create Unit Tests for Data Transformation
-**Priority**: P1  
-**Effort**: 1.5 hours  
+**Priority**: P1
+**Effort**: 1.5 hours
 **Dependencies**: T011, T012, T013, T014
 
 **Description**:
@@ -914,8 +914,8 @@ pytest tests/test_calpendo_plugin.py::TestTransformation -v
 ---
 
 ### T019: Create Fixtures for Mock API Responses
-**Priority**: P1  
-**Effort**: 0.5 hours  
+**Priority**: P1
+**Effort**: 0.5 hours
 **Dependencies**: T017
 
 **Description**:
@@ -938,8 +938,8 @@ Create JSON fixture files with realistic mock Calpendo API responses for testing
 ---
 
 ### T020: Create End-to-End Integration Test
-**Priority**: P2  
-**Effort**: 1 hour  
+**Priority**: P2
+**Effort**: 1 hour
 **Dependencies**: T016, T017, T018
 
 **Description**:
@@ -973,8 +973,8 @@ pytest tests/test_calpendo_integration.py::test_end_to_end_sync -v
 ## Category 5: Documentation & Deployment
 
 ### T021: Create Example Configuration File
-**Priority**: P1  
-**Effort**: 0.5 hours  
+**Priority**: P1
+**Effort**: 0.5 hours
 **Dependencies**: T002
 
 **Description**:
@@ -999,8 +999,8 @@ Create example configuration file with comprehensive comments explaining all opt
 ---
 
 ### T022: Update Main Configuration Template
-**Priority**: P2  
-**Effort**: 0.5 hours  
+**Priority**: P2
+**Effort**: 0.5 hours
 **Dependencies**: T021
 
 **Description**:
@@ -1021,8 +1021,8 @@ Update main `mwl_config.json` template to include Calpendo data source example.
 ---
 
 ### T023: Register Plugin in PLUGIN_REGISTRY
-**Priority**: P0 (Critical Path)  
-**Effort**: 0.25 hours  
+**Priority**: P0 (Critical Path)
+**Effort**: 0.25 hours
 **Dependencies**: T001
 
 **Description**:
@@ -1043,8 +1043,8 @@ Add CalendoPlugin to the plugin registry in `data_sources/__init__.py` so it can
 ---
 
 ### T024: Update README with Calpendo Example
-**Priority**: P2  
-**Effort**: 0.5 hours  
+**Priority**: P2
+**Effort**: 0.5 hours
 **Dependencies**: T021, T023
 
 **Description**:
@@ -1068,8 +1068,8 @@ Update project README.md to document Calpendo plugin with configuration example 
 ---
 
 ### T025: Create Quickstart Verification Script
-**Priority**: P3  
-**Effort**: 0.5 hours  
+**Priority**: P3
+**Effort**: 0.5 hours
 **Dependencies**: T023
 
 **Description**:

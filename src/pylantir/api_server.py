@@ -21,7 +21,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 
 try:
-    from fastapi import FastAPI, HTTPException, Depends, status, Query
+    from fastapi import FastAPI, HTTPException, Depends, Query
+    from fastapi import status as http_status
     from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
     from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel, validator
@@ -144,6 +145,7 @@ class WorklistItemResponse(BaseModel):
     protocol_name: Optional[str]
     station_name: Optional[str]
     performed_procedure_step_status: Optional[str]
+    data_source: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -169,6 +171,7 @@ class WorklistItemCreate(BaseModel):
     protocol_name: Optional[str] = None
     station_name: Optional[str] = None
     performed_procedure_step_status: str = "SCHEDULED"
+    data_source: Optional[str] = None
 
     @validator('performed_procedure_step_status')
     def validate_status(cls, v):
@@ -195,6 +198,7 @@ class WorklistItemUpdate(BaseModel):
     protocol_name: Optional[str] = None
     station_name: Optional[str] = None
     performed_procedure_step_status: Optional[str] = None
+    data_source: Optional[str] = None
 
     @validator('performed_procedure_step_status')
     def validate_status(cls, v):
@@ -296,7 +300,7 @@ async def get_current_user(
 
         if payload is None:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=http_status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
@@ -304,7 +308,7 @@ async def get_current_user(
         username = payload.get("sub")
         if username is None:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=http_status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload",
                 headers={"WWW-Authenticate": "Bearer"},
             )
@@ -312,7 +316,7 @@ async def get_current_user(
         user = auth_db.query(User).filter(User.username == username).first()
         if user is None or not user.is_active:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=http_status.HTTP_401_UNAUTHORIZED,
                 detail="User not found or inactive",
                 headers={"WWW-Authenticate": "Bearer"},
             )
@@ -324,7 +328,7 @@ async def get_current_user(
     except Exception as e:
         lgr.error(f"Authentication error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=http_status.HTTP_401_UNAUTHORIZED,
             detail="Authentication failed",
             headers={"WWW-Authenticate": "Bearer"},
         )
@@ -344,7 +348,7 @@ def require_permission(action: str, resource: str = "worklist"):
     def permission_checker(current_user: User = Depends(get_current_user)) -> User:
         if not current_user.has_permission(action, resource):
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=http_status.HTTP_403_FORBIDDEN,
                 detail=f"Insufficient permissions for {action} on {resource}"
             )
         return current_user
@@ -364,7 +368,7 @@ async def login(
 
         if not user:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=http_status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid username or password",
                 headers={"WWW-Authenticate": "Bearer"},
             )
@@ -390,7 +394,7 @@ async def login(
     except Exception as e:
         lgr.error(f"Login error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Login failed"
         )
 
@@ -437,7 +441,7 @@ async def get_worklist_items(
     except Exception as e:
         lgr.error(f"Error retrieving worklist items: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve worklist items"
         )
 

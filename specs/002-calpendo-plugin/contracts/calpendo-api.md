@@ -1,15 +1,15 @@
 # Calpendo API Contract
 
-**Feature**: 002-calpendo-plugin  
-**API Version**: WebDAV Query Interface  
-**Base URL**: `https://sfc-calgary.calpendo.com` (configurable)  
+**Feature**: 002-calpendo-plugin
+**API Version**: WebDAV Query Interface
+**Base URL**: `https://sfc-calgary.calpendo.com` (configurable)
 **Authentication**: HTTP Basic Auth
 
 ---
 
 ## Authentication
 
-**Method**: HTTP Basic Authentication  
+**Method**: HTTP Basic Authentication
 **Headers**:
 ```http
 Authorization: Basic {base64(username:password)}
@@ -334,7 +334,7 @@ for attempt in range(max_retries):
 
 **Impact**: Must fetch all bookings in date range, even if unchanged
 
-**Mitigation**: 
+**Mitigation**:
 - Use rolling window (fetch last N hours)
 - Implement local change detection (hash critical fields)
 - Only write to DB when changes detected

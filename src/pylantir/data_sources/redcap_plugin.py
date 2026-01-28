@@ -260,6 +260,7 @@ class REDCapPlugin(DataSourcePlugin):
                 "modality": "MR",  # Default modality
                 "study_instance_uid": self._generate_instance_uid(),
                 "performed_procedure_step_status": "SCHEDULED",
+                "data_source": self.get_source_name(),  # Track which data source created this entry
             }
 
             # Apply field mapping

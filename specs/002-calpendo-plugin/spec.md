@@ -1,8 +1,8 @@
 # Feature Specification: Calpendo Data Source Plugin
 
-**Feature Branch**: `002-calpendo-plugin`  
-**Created**: 2026-01-27  
-**Status**: Draft  
+**Feature Branch**: `002-calpendo-plugin`
+**Created**: 2026-01-27
+**Status**: Draft
 **Input**: User description: "I want to use the example in example_for_calpendo.py to create a new data_source calpendo_plugin following the idea from redcap."
 
 ## User Scenarios & Testing *(mandatory)*

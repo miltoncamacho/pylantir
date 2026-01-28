@@ -21,7 +21,8 @@ def populate_data():
         station_name="MRI_ROOM_1",
         protocol_name="BRAIN_MRI_3T",
         study_instance_uid="1.2.3.4.5.6.7.8.1",
-        study_description="MRI BRAIN" # CPIP
+        study_description="MRI BRAIN", # CPIP
+        data_source="test_data"
     )
     session.add(item1)
 
@@ -41,7 +42,8 @@ def populate_data():
         station_name="MRI_ROOM_1",
         protocol_name="BRAIN_MRI_3T",
         study_instance_uid="1.2.3.4.5.6.7.8.2",
-        study_description="MRI BRAIN" # CPIP
+        study_description="MRI BRAIN", # CPIP
+        data_source="test_data"
     )
     session.add(item2)
 
@@ -60,7 +62,8 @@ def populate_data():
         station_name="MRI_ROOM_1",
         protocol_name="BRAIN_MRI_3T",
         study_instance_uid="1.2.3.4.5.6.7.8.3",
-        study_description="MRI BRAIN" # CPIP
+        study_description="MRI BRAIN", # CPIP
+        data_source="test_data"
     )
     session.add(item3)
 

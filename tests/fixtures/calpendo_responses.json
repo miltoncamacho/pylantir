@@ -1,114 +1,114 @@
 {
-  "booking_query_response": {
-    "biskits": [
-      {
+    "booking_query_response": {
+        "biskits": [
+            {
+                "id": 12345,
+                "formattedName": "[2026-01-27 14:00:00.0, 2026-01-27 15:30:00.0]",
+                "title": "SUB001_John_Doe",
+                "status": "Approved",
+                "biskitType": "MRIScan"
+            },
+            {
+                "id": 12346,
+                "formattedName": "[2026-01-27 16:00:00.0, 2026-01-27 17:00:00.0]",
+                "title": "SUB002_Jane_Smith",
+                "status": "Approved",
+                "biskitType": "EEGScan"
+            },
+            {
+                "id": 12347,
+                "formattedName": "[2026-01-28 09:00:00.0, 2026-01-28 10:00:00.0]",
+                "title": "SUB003_Bob_Johnson",
+                "status": "Cancelled",
+                "biskitType": "MRIScan"
+            }
+        ]
+    },
+    "booking_detail_12345": {
         "id": 12345,
         "formattedName": "[2026-01-27 14:00:00.0, 2026-01-27 15:30:00.0]",
         "title": "SUB001_John_Doe",
         "status": "Approved",
-        "biskitType": "MRIScan"
-      },
-      {
+        "biskitType": "MRIScan",
+        "properties": {
+            "project": {
+                "formattedName": "BRISKP (Brain network models in schizophrenia)"
+            },
+            "resource": {
+                "formattedName": "3T Diagnostic Scanner"
+            },
+            "booker": {
+                "name": "Dr. Alice Williams"
+            },
+            "owner": {
+                "name": "Dr. Alice Williams"
+            }
+        }
+    },
+    "booking_detail_12346": {
         "id": 12346,
         "formattedName": "[2026-01-27 16:00:00.0, 2026-01-27 17:00:00.0]",
         "title": "SUB002_Jane_Smith",
         "status": "Approved",
-        "biskitType": "EEGScan"
-      },
-      {
+        "biskitType": "EEGScan",
+        "properties": {
+            "project": {
+                "formattedName": "Cognitive Study (EEG Analysis)"
+            },
+            "resource": {
+                "formattedName": "EEG Lab Room A"
+            },
+            "booker": {
+                "name": "Dr. Bob Wilson"
+            },
+            "owner": {
+                "name": "Dr. Bob Wilson"
+            }
+        }
+    },
+    "booking_detail_12347": {
         "id": 12347,
         "formattedName": "[2026-01-28 09:00:00.0, 2026-01-28 10:00:00.0]",
         "title": "SUB003_Bob_Johnson",
         "status": "Cancelled",
-        "biskitType": "MRIScan"
-      }
-    ]
-  },
-  "booking_detail_12345": {
-    "id": 12345,
-    "formattedName": "[2026-01-27 14:00:00.0, 2026-01-27 15:30:00.0]",
-    "title": "SUB001_John_Doe",
-    "status": "Approved",
-    "biskitType": "MRIScan",
-    "properties": {
-      "project": {
-        "formattedName": "BRISKP (Brain network models in schizophrenia)"
-      },
-      "resource": {
-        "formattedName": "3T Diagnostic Scanner"
-      },
-      "booker": {
-        "name": "Dr. Alice Williams"
-      },
-      "owner": {
-        "name": "Dr. Alice Williams"
-      }
-    }
-  },
-  "booking_detail_12346": {
-    "id": 12346,
-    "formattedName": "[2026-01-27 16:00:00.0, 2026-01-27 17:00:00.0]",
-    "title": "SUB002_Jane_Smith",
-    "status": "Approved",
-    "biskitType": "EEGScan",
-    "properties": {
-      "project": {
-        "formattedName": "Cognitive Study (EEG Analysis)"
-      },
-      "resource": {
-        "formattedName": "EEG Lab Room A"
-      },
-      "booker": {
-        "name": "Dr. Bob Wilson"
-      },
-      "owner": {
-        "name": "Dr. Bob Wilson"
-      }
-    }
-  },
-  "booking_detail_12347": {
-    "id": 12347,
-    "formattedName": "[2026-01-28 09:00:00.0, 2026-01-28 10:00:00.0]",
-    "title": "SUB003_Bob_Johnson",
-    "status": "Cancelled",
-    "biskitType": "MRIScan",
-    "properties": {
-      "project": {
-        "formattedName": "Memory Research"
-      },
-      "resource": {
-        "formattedName": "3T Research Scanner"
-      },
-      "booker": {
-        "name": "Dr. Carol Davis"
-      },
-      "owner": {
-        "name": "Dr. Carol Davis"
-      }
-    }
-  },
-  "mri_operator_12345": {
-    "biskits": [
-      {
-        "id": 12345,
+        "biskitType": "MRIScan",
         "properties": {
-          "Operator": {
-            "name": "Tech John Smith"
-          }
+            "project": {
+                "formattedName": "Memory Research"
+            },
+            "resource": {
+                "formattedName": "3T Research Scanner"
+            },
+            "booker": {
+                "name": "Dr. Carol Davis"
+            },
+            "owner": {
+                "name": "Dr. Carol Davis"
+            }
         }
-      }
-    ]
-  },
-  "error_401": {
-    "status_code": 401,
-    "message": "Unauthorized"
-  },
-  "error_404": {
-    "status_code": 404,
-    "message": "Not Found"
-  },
-  "error_500": {
-    "status_code": 500,
-    "message": "Internal Server Error"
-  }
+    },
+    "mri_operator_12345": {
+        "biskits": [
+            {
+                "id": 12345,
+                "properties": {
+                    "Operator": {
+                        "name": "Tech John Smith"
+                    }
+                }
+            }
+        ]
+    },
+    "error_401": {
+        "status_code": 401,
+        "message": "Unauthorized"
+    },
+    "error_404": {
+        "status_code": 404,
+        "message": "Not Found"
+    },
+    "error_500": {
+        "status_code": 500,
+        "message": "Internal Server Error"
+    }
 }

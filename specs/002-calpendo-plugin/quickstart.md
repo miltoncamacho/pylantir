@@ -1,7 +1,7 @@
 # Quickstart: Calpendo Data Source Plugin
 
-**Feature**: 002-calpendo-plugin  
-**Purpose**: Get started with the Calpendo plugin in 5 minutes  
+**Feature**: 002-calpendo-plugin
+**Purpose**: Get started with the Calpendo plugin in 5 minutes
 **Audience**: System administrators configuring Pylantir
 
 ---

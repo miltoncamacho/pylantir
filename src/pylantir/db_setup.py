@@ -72,7 +72,10 @@ def get_threadsafe_engine(db_path="worklist.db", echo=False):
 
 # Load environment variables (you can use dotenv for more flexibility)
 DB_PATH = os.getenv("DB_PATH", "worklist.db")  # Default: current directory
+DB_PATH = os.path.expanduser(DB_PATH)
 DB_ECHO = os.getenv("DB_ECHO", "False").lower() in ("true", "1")
+
+lgr.info(f"Using worklist database path: {DB_PATH}")
 
 # Create the engine
 engine = get_engine(db_path=DB_PATH, echo=DB_ECHO)

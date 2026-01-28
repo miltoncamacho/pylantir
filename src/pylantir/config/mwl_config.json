@@ -55,6 +55,5 @@
         ]
     },
     "_comment_data_sources": "Optional: Configure data sources to fetch worklist entries from external systems. See calpendo_config_example.json for detailed configuration.",
-    "data_sources": [
-    ]
+    "data_sources": []
 }

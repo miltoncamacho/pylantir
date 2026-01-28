@@ -594,13 +594,15 @@ def main() -> None:
         try:
             # Check if API dependencies are available
             import uvicorn
-            from ..api_server import app
-            from ..auth_db_setup import init_auth_database, create_initial_admin_user
 
             # Load configuration for database setup
             config = load_config(args.pylantir_config)
             update_env_with_config(config)
             users_db_path = config.get("users_db_path")  # Optional users database path
+
+            # Import API app after env vars are set (DB_PATH, DB_ECHO, etc.)
+            from ..api_server import app
+            from ..auth_db_setup import init_auth_database, create_initial_admin_user
 
             # Initialize authentication database with configured path
             init_auth_database(users_db_path)

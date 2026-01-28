@@ -16,6 +16,7 @@ import logging
 import re
 import hashlib
 import json
+from urllib.parse import quote
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
@@ -129,10 +130,24 @@ class CalendoPlugin(DataSourcePlugin):
         """
         try:
             # Calculate rolling window
-            lookback_multiplier = self._config.get("lookback_multiplier", 2)
             now = datetime.now(self._timezone)
-            start_time = now - timedelta(seconds=interval * lookback_multiplier)
-            end_time = now + timedelta(hours=24)
+            window_mode = self._config.get("window_mode")
+            use_daily_window = self._config.get("daily_window", False)
+
+            if window_mode == "today" or use_daily_window:
+                start_time = self._timezone.localize(
+                    datetime(now.year, now.month, now.day)
+                )
+                end_time = start_time + timedelta(days=1)
+                self.logger.info(
+                    "Using daily window from %s to %s",
+                    start_time.isoformat(),
+                    end_time.isoformat(),
+                )
+            else:
+                lookback_multiplier = self._config.get("lookback_multiplier", 2)
+                start_time = now - timedelta(seconds=interval * lookback_multiplier)
+                end_time = now + timedelta(hours=24)
 
             self.logger.info(
                 f"Fetching Calpendo bookings from {start_time.isoformat()} "
@@ -141,7 +156,12 @@ class CalendoPlugin(DataSourcePlugin):
 
             # Fetch booking IDs in window
             booking_ids = self._fetch_bookings_in_window(start_time, end_time)
-            self.logger.info(f"Found {len(booking_ids)} bookings in window")
+            self.logger.info(
+                "Found %s bookings in window (%s to %s)",
+                len(booking_ids),
+                start_time.isoformat(),
+                end_time.isoformat(),
+            )
 
             if not booking_ids:
                 return []
@@ -177,22 +197,21 @@ class CalendoPlugin(DataSourcePlugin):
         start_str = start_time.strftime("%Y%m%d-%H%M")
         end_str = end_time.strftime("%Y%m%d-%H%M")
 
-        # Date range (AND)
-        query_parts = [f"dateRange.start/GE/{start_str}/dateRange.start/LT/{end_str}"]
+        # Base date range (AND) — matches example_for_calpendo.py behavior
+        query = f"AND/dateRange.start/GE/{start_str}/dateRange.start/LT/{end_str}"
 
-        # Resource filter (OR)
+        # Resource filter (OR) — URL-encode resource names
         resources = self._config.get("resources", [])
         if resources:
-            resource_filters = "/".join([f"resource.name/EQ/{r}" for r in resources])
-            query_parts.insert(0, f"OR/{resource_filters}")
+            resource_filters = "/OR" + "".join([
+                f"/resource.name/EQ/{quote(r)}" for r in resources
+            ])
+            query += resource_filters
 
         # Status filter (AND)
         status_filter = self._config.get("status_filter")
         if status_filter:
-            query_parts.insert(0, f"status/EQ/{status_filter}")
-
-        # Combine with AND
-        query = "AND/" + "/".join(query_parts)
+            query += f"/status/EQ/{quote(status_filter)}"
 
         self.logger.debug(f"Built query: {query}")
         return query
@@ -212,6 +231,10 @@ class CalendoPlugin(DataSourcePlugin):
             self.logger.debug(f"Fetching bookings from: {url}")
             response = requests.get(url, auth=auth, timeout=30)
             response.raise_for_status()
+            self.logger.info(
+                "Calpendo booking list response OK (status %s)",
+                response.status_code,
+            )
 
             data = response.json()
             booking_ids = [b["id"] for b in data.get("biskits", [])]
@@ -237,6 +260,11 @@ class CalendoPlugin(DataSourcePlugin):
                 self.logger.warning(f"Booking {booking_id} not found (deleted?)")
                 return None
             response.raise_for_status()
+            self.logger.info(
+                "Calpendo booking detail response OK (status %s) for booking %s",
+                response.status_code,
+                booking_id,
+            )
 
             booking = response.json()
 
@@ -263,6 +291,11 @@ class CalendoPlugin(DataSourcePlugin):
         try:
             response = requests.get(url, auth=auth, timeout=10)
             response.raise_for_status()
+            self.logger.info(
+                "Calpendo MRI operator response OK (status %s) for booking %s",
+                response.status_code,
+                booking_id,
+            )
 
             data = response.json()
             biskits = data.get("biskits", [])
@@ -448,6 +481,9 @@ class CalendoPlugin(DataSourcePlugin):
         resource_name = self._get_nested_value(booking, "properties.resource.formattedName")
         if resource_name:
             entry["modality"] = self._map_resource_to_modality(resource_name)
+
+        # Track data source
+        entry["data_source"] = self.get_source_name()
 
         # Add booking hash for change detection
         booking_hash = self._compute_booking_hash(booking)

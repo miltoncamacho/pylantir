@@ -73,12 +73,12 @@ def plugin_with_env(calpendo_config):
     """Create plugin with environment variables set"""
     os.environ["CALPENDO_USERNAME"] = "test_user"
     os.environ["CALPENDO_PASSWORD"] = "test_pass"
-    
+
     plugin = CalendoPlugin()
     plugin.validate_config(calpendo_config)
-    
+
     yield plugin
-    
+
     # Cleanup
     if "CALPENDO_USERNAME" in os.environ:
         del os.environ["CALPENDO_USERNAME"]
@@ -157,7 +157,7 @@ class TestAPIIntegration:
                 field_mapping=calpendo_config["field_mapping"],
                 interval=60
             )
-        
+
         assert "authentication" in str(exc_info.value).lower()
 
     @responses.activate
@@ -404,11 +404,11 @@ class TestEndToEnd:
         assert "scheduled_start_date" in entries1[0]
         assert "scheduled_start_time" in entries1[0]
         assert "scheduled_procedure_step_duration" in entries1[0]
-        
+
         # Verify hash is present
         notes1 = json.loads(entries1[0]["notes"])
         assert "booking_hash" in notes1
-        
+
         # Clean up
         del os.environ["CALPENDO_USERNAME"]
         del os.environ["CALPENDO_PASSWORD"]

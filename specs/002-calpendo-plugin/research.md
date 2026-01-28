@@ -1,7 +1,7 @@
 # Research: Calpendo Data Source Plugin
 
-**Feature**: 002-calpendo-plugin  
-**Date**: 2026-01-27  
+**Feature**: 002-calpendo-plugin
+**Date**: 2026-01-27
 **Status**: Complete
 
 ## Overview
@@ -139,7 +139,7 @@ with ThreadPoolExecutor(max_workers=5) as executor:
         executor.submit(fetch_booking_details, base_url, auth, booking['id'], booking['biskitType']): booking
         for booking in bookings['biskits']
     }
-    
+
     for future in as_completed(future_to_booking):
         booking = future_to_booking[future]
         try:
@@ -166,24 +166,24 @@ import pytz
 def calculate_sync_window(sync_interval: int, lookback_multiplier: int = 2):
     """
     Calculate the time window for fetching bookings.
-    
+
     Args:
         sync_interval: Seconds between sync cycles (e.g., 300)
         lookback_multiplier: Safety margin multiplier (default: 2)
-    
+
     Returns:
         (window_start, window_end): UTC datetime objects
     """
     utc = pytz.UTC
     now = datetime.now(utc)
-    
+
     # Look back: sync_interval * multiplier
     lookback_seconds = sync_interval * lookback_multiplier
     window_start = now - timedelta(seconds=lookback_seconds)
-    
+
     # Look ahead: next 24 hours (catch future bookings)
     window_end = now + timedelta(days=1)
-    
+
     return window_start, window_end
 ```
 
@@ -207,7 +207,7 @@ import json
 def compute_booking_hash(booking: dict) -> str:
     """
     Compute SHA256 hash of critical booking fields.
-    
+
     Changes to these fields require DB update:
     - title (patient ID/name)
     - status (Approved, Cancelled, etc.)
@@ -216,7 +216,7 @@ def compute_booking_hash(booking: dict) -> str:
     - resource (scanner type)
     """
     properties = booking.get('properties', {})
-    
+
     critical_data = {
         'title': booking.get('title'),
         'status': booking.get('status'),
@@ -224,7 +224,7 @@ def compute_booking_hash(booking: dict) -> str:
         'project': properties.get('project', {}).get('formattedName'),
         'resource': properties.get('resource', {}).get('formattedName')
     }
-    
+
     # Sort keys for consistent hashing
     json_str = json.dumps(critical_data, sort_keys=True)
     return hashlib.sha256(json_str.encode()).hexdigest()
@@ -235,38 +235,38 @@ def compute_booking_hash(booking: dict) -> str:
 def sync_bookings(window_start, window_end, existing_records):
     # 1. Fetch bookings from Calpendo in time window
     calpendo_bookings = fetch_bookings_in_window(window_start, window_end)
-    
+
     # 2. Build set of fetched booking IDs
     fetched_ids = {b['id'] for b in calpendo_bookings}
-    
+
     # 3. Process each fetched booking
     for booking in calpendo_bookings:
         booking_id = booking['id']
         new_hash = compute_booking_hash(booking)
-        
+
         existing = existing_records.get(booking_id)
-        
+
         if existing is None:
             # New booking → INSERT
             insert_booking(booking)
             logger.info(f"[calpendo] New booking {booking_id}: {booking['title']}")
-        
+
         elif existing.hash != new_hash:
             # Changed booking → UPDATE
             update_booking(booking)
             logger.info(f"[calpendo] Updated booking {booking_id}: {booking['title']}")
-        
+
         else:
             # Unchanged → SKIP
             logger.debug(f"[calpendo] No changes for booking {booking_id}")
-    
+
     # 4. Handle missing bookings (cancelled or deleted)
     existing_ids = set(existing_records.keys())
     missing_ids = existing_ids - fetched_ids
-    
+
     for booking_id in missing_ids:
         existing = existing_records[booking_id]
-        
+
         if existing.status != 'DISCONTINUED':
             # Mark as cancelled (preserve history)
             mark_as_cancelled(booking_id)
@@ -324,29 +324,29 @@ from typing import Dict, Any, Optional
 def extract_fields(source_value: str, extraction_config: Dict[str, Any]) -> Dict[str, Optional[str]]:
     """
     Apply multiple regex patterns to extract subfields from source value.
-    
+
     Args:
         source_value: Original field value (e.g., "SUB001 - John Doe")
         extraction_config: Dict of {target_field: {pattern, group}}
-    
+
     Returns:
         Dict of {target_field: extracted_value}
-    
+
     Example:
         source_value = "SUB001 - John Doe"
         extraction_config = {
             "patient_id": {"pattern": "^([A-Z0-9]+)", "group": 1},
             "patient_name": {"pattern": " - (.+)$", "group": 1}
         }
-        
+
         Returns: {"patient_id": "SUB001", "patient_name": "John Doe"}
     """
     extracted = {}
-    
+
     for target_field, regex_config in extraction_config.items():
         pattern = regex_config['pattern']
         group = regex_config.get('group', 0)
-        
+
         try:
             match = re.search(pattern, source_value)
             if match:
@@ -357,18 +357,18 @@ def extract_fields(source_value: str, extraction_config: Dict[str, Any]) -> Dict
                     f"for field '{target_field}'"
                 )
                 extracted[target_field] = None
-        
+
         except re.error as e:
             logger.error(f"Invalid regex pattern '{pattern}': {e}")
             extracted[target_field] = None
-        
+
         except IndexError:
             logger.error(
                 f"Capture group {group} not found in pattern '{pattern}' "
                 f"(matched: {match.group(0)})"
             )
             extracted[target_field] = None
-    
+
     return extracted
 ```
 
@@ -474,29 +474,29 @@ dt_correct = mt_tz.localize(dt_naive, is_dst=None)  # Raises exception if ambigu
 def parse_calpendo_datetime_range(formatted_name: str, timezone_str: str = 'America/Edmonton'):
     """
     Parse Calpendo formattedName into start/end datetime objects.
-    
+
     Args:
         formatted_name: "[YYYY-MM-DD HH:MM:SS.f, YYYY-MM-DD HH:MM:SS.f]"
         timezone_str: Timezone name (default: Mountain Time)
-    
+
     Returns:
         (start_utc, end_utc): Tuple of UTC datetime objects
-    
+
     Raises:
         ValueError: If format is invalid
     """
     import re
     from datetime import datetime
     import pytz
-    
+
     # Extract timestamps with regex
     match = re.match(r'\[([^,]+), ([^\]]+)\]', formatted_name)
     if not match:
         raise ValueError(f"Invalid formattedName format: {formatted_name}")
-    
+
     start_str = match.group(1).strip()
     end_str = match.group(2).strip()
-    
+
     # Parse datetime strings
     try:
         start_naive = datetime.strptime(start_str, '%Y-%m-%d %H:%M:%S.%f')
@@ -505,17 +505,17 @@ def parse_calpendo_datetime_range(formatted_name: str, timezone_str: str = 'Amer
         # Try without microseconds
         start_naive = datetime.strptime(start_str, '%Y-%m-%d %H:%M:%S')
         end_naive = datetime.strptime(end_str, '%Y-%m-%d %H:%M:%S')
-    
+
     # Localize to configured timezone
     tz = pytz.timezone(timezone_str)
     start_local = tz.localize(start_naive)
     end_local = tz.localize(end_naive)
-    
+
     # Convert to UTC
     utc = pytz.UTC
     start_utc = start_local.astimezone(utc)
     end_utc = end_local.astimezone(utc)
-    
+
     return start_utc, end_utc
 ```
 
@@ -536,11 +536,11 @@ worklist_item.scheduled_start_time = start_utc.time()
 def format_calpendo_query_date(dt_utc: datetime, timezone_str: str = 'America/Edmonton'):
     """
     Convert UTC datetime to Calpendo query format (YYYYMMDD-HHMM in local time).
-    
+
     Args:
         dt_utc: UTC datetime
         timezone_str: Target timezone for query
-    
+
     Returns:
         String in format "YYYYMMDD-HHMM"
     """
@@ -577,7 +577,7 @@ def fetch_with_retry(
 ) -> Dict[str, Any]:
     """
     Fetch from Calpendo API with retry logic.
-    
+
     Raises:
         PluginConfigError: Invalid credentials (401)
         PluginFetchError: Network or API errors
@@ -587,7 +587,7 @@ def fetch_with_retry(
             response = requests.get(url, auth=auth, timeout=timeout)
             response.raise_for_status()
             return response.json()
-        
+
         except requests.ConnectionError as e:
             if attempt < max_retries - 1:
                 logger.warning(f"Connection error (attempt {attempt+1}/{max_retries}): {e}")
@@ -595,14 +595,14 @@ def fetch_with_retry(
                 continue
             else:
                 raise PluginFetchError(f"Cannot connect to Calpendo after {max_retries} attempts: {e}")
-        
+
         except requests.Timeout:
             if attempt < max_retries - 1:
                 logger.warning(f"Timeout (attempt {attempt+1}/{max_retries})")
                 continue
             else:
                 raise PluginFetchError(f"Calpendo API timeout after {timeout}s")
-        
+
         except requests.HTTPError as e:
             if e.response.status_code == 401:
                 raise PluginConfigError("Invalid Calpendo credentials (401 Unauthorized)")
@@ -619,7 +619,7 @@ def fetch_with_retry(
                     raise PluginFetchError(f"Calpendo server error: {e}")
             else:
                 raise PluginFetchError(f"Calpendo API error: {e}")
-        
+
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON response: {e}\nResponse: {response.text[:200]}")
             raise PluginFetchError(f"Calpendo returned invalid JSON: {e}")
@@ -635,19 +635,19 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 def fetch_all_booking_details(booking_ids, base_url, auth):
     """
     Fetch details for multiple bookings in parallel.
-    
+
     Returns:
         List of detailed booking dicts (skips failed fetches)
     """
     detailed_bookings = []
     failed_count = 0
-    
+
     with ThreadPoolExecutor(max_workers=5) as executor:
         future_to_id = {
             executor.submit(fetch_booking_detail, base_url, auth, bid): bid
             for bid in booking_ids
         }
-        
+
         for future in as_completed(future_to_id):
             booking_id = future_to_id[future]
             try:
@@ -658,10 +658,10 @@ def fetch_all_booking_details(booking_ids, base_url, auth):
                 logger.error(f"Failed to fetch booking {booking_id}: {e}")
                 failed_count += 1
                 # Continue with other bookings
-    
+
     if failed_count > 0:
         logger.warning(f"Failed to fetch {failed_count} booking details, continuing with {len(detailed_bookings)} successful fetches")
-    
+
     return detailed_bookings
 ```
 
@@ -693,7 +693,7 @@ Booking Processing
 def transform_booking_to_worklist(booking: dict, field_mapping: dict) -> Optional[WorklistItem]:
     """
     Transform Calpendo booking to WorklistItem.
-    
+
     Returns:
         WorklistItem or None (if critical errors)
     """
@@ -703,26 +703,26 @@ def transform_booking_to_worklist(booking: dict, field_mapping: dict) -> Optiona
         if not patient_id:
             logger.error(f"Cannot extract patient_id from '{booking['title']}', skipping booking {booking['id']}")
             return None
-        
+
         # Extract start/end times (required)
         try:
             start_utc, end_utc = parse_calpendo_datetime_range(booking['formattedName'])
         except ValueError as e:
             logger.error(f"Invalid timestamp format in booking {booking['id']}: {e}")
             return None
-        
+
         # Extract optional fields (use defaults if missing)
         patient_name = extract_field(booking['title'], field_mapping['title']['_extract']['patient_name'])
         if not patient_name:
             logger.warning(f"Could not extract patient_name from '{booking['title']}', using patient_id")
             patient_name = patient_id
-        
+
         # Map status (use default if unknown)
         status = booking.get('status', 'Unknown')
         dicom_status = STATUS_MAPPING.get(status, 'SCHEDULED')
         if status not in STATUS_MAPPING:
             logger.warning(f"Unknown status '{status}' for booking {booking['id']}, defaulting to SCHEDULED")
-        
+
         # Create WorklistItem
         return WorklistItem(
             patient_id=patient_id,
@@ -732,7 +732,7 @@ def transform_booking_to_worklist(booking: dict, field_mapping: dict) -> Optiona
             performed_procedure_step_status=dicom_status,
             # ... other fields
         )
-    
+
     except Exception as e:
         logger.error(f"Unexpected error transforming booking {booking.get('id', 'unknown')}: {e}")
         return None

@@ -1,6 +1,6 @@
 # Implementation Plan: Calpendo Data Source Plugin
 
-**Branch**: `002-calpendo-plugin` | **Date**: 2026-01-27 | **Spec**: [spec.md](spec.md)  
+**Branch**: `002-calpendo-plugin` | **Date**: 2026-01-27 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `/specs/002-calpendo-plugin/spec.md`
 
 ## Summary
@@ -16,19 +16,19 @@ Implement a Calpendo data source plugin following the established DataSourcePlug
 
 ## Technical Context
 
-**Language/Version**: Python 3.8+ (existing Pylantir constraint)  
-**Primary Dependencies**: 
+**Language/Version**: Python 3.8+ (existing Pylantir constraint)
+**Primary Dependencies**:
 - `requests` (HTTP client for Calpendo API - NEW)
 - `pytz` (timezone conversion UTC ↔ Mountain Time - NEW)
 - `re` (regex pattern matching for field extraction - stdlib)
 - `sqlalchemy` (existing - DB operations)
 - `concurrent.futures.ThreadPoolExecutor` (existing - parallel API requests)
 
-**Storage**: SQLite via SQLAlchemy ORM (existing WorklistItem model, no schema changes needed)  
-**Testing**: pytest (existing framework), mock Calpendo API responses  
-**Target Platform**: Linux/macOS servers running Pylantir MWL service  
-**Project Type**: Single Python package with plugin architecture  
-**Performance Goals**: 
+**Storage**: SQLite via SQLAlchemy ORM (existing WorklistItem model, no schema changes needed)
+**Testing**: pytest (existing framework), mock Calpendo API responses
+**Target Platform**: Linux/macOS servers running Pylantir MWL service
+**Project Type**: Single Python package with plugin architecture
+**Performance Goals**:
 - <10s sync for 50 bookings (spec SC-001)
 - 3-5x speedup with parallel requests (spec SC-007)
 - <200ms per booking transformation
@@ -39,7 +39,7 @@ Implement a Calpendo data source plugin following the established DataSourcePlug
 - Environment variables only for credentials (no secrets in config files)
 - Mountain Time (America/Edmonton) timezone for all timestamps
 
-**Scale/Scope**: 
+**Scale/Scope**:
 - 10-100 bookings per day per resource
 - 3-5 resources (3T, EEG, Mock Scanner)
 - Single Calpendo server instance
@@ -50,7 +50,7 @@ Implement a Calpendo data source plugin following the established DataSourcePlug
 
 ### ✅ **Principle I: Minimalist Dependencies**
 - **New Dependencies**: `requests`, `pytz`
-- **Justification**: 
+- **Justification**:
   - `requests`: Calpendo has simple REST/WebDAV API, no complex client needed. Widely used, stable, minimal footprint.
   - `pytz`: Required for accurate timezone conversions (UTC ↔ Mountain Time). Standard library `datetime` insufficient for historical timezone rules.
 - **Approval**: Both are industry-standard, minimal attack surface, well-maintained.
@@ -260,7 +260,7 @@ def extract_field(source_value: str, extraction_config: dict) -> str:
    import pytz
    mt_tz = pytz.timezone('America/Edmonton')
    utc_tz = pytz.UTC
-   
+
    # Calpendo returns: "[2025-02-12 10:00:00.0, 2025-02-12 11:00:00.0]"
    # Parse as Mountain Time, convert to UTC for storage
    dt_str = "2025-02-12 10:00:00.0"
