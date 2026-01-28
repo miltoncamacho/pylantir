@@ -222,6 +222,8 @@ The new configuration format uses a `data_sources` array to define one or more d
 - **`config`**: Source-specific configuration
   - For REDCap: `site_id`, `protocol`, and optional API credentials
 - **`field_mapping`**: Maps source fields to DICOM worklist fields
+- **`window_mode`** (Calpendo optional): `rolling` (default) or `daily`
+- **`daily_window`** (Calpendo optional): `{"start_time": [h, m], "end_time": [h, m]}`
 
 ### Multiple Data Sources Example
 
@@ -283,31 +285,31 @@ export CALPENDO_PASSWORD=<your_calpendo_password>
       "sync_interval": 60,
       "config": {
         "base_url": "https://your-institution.calpendo.com",
-        "resources": ["3T Diagnostic", "EEG Lab"],
-        "field_mapping": {
-          "patient_id": {
-            "source_field": "title",
-            "_extract": {
-              "pattern": "^([A-Z0-9]+)_.*",
-              "group": 1
-            }
-          },
-          "patient_name": {
-            "source_field": "title",
-            "_extract": {
-              "pattern": "^[A-Z0-9]+_(.+)$",
-              "group": 1
-            }
-          },
-          "study_description": {
-            "source_field": "properties.project.formattedName",
-            "_extract": {
-              "pattern": "^([^(]+)",
-              "group": 1
-            }
-          },
-          "accession_number": "id"
-        }
+        "resources": ["3T Diagnostic", "EEG Lab"]
+      },
+      "field_mapping": {
+        "patient_id": {
+          "source_field": "title",
+          "_extract": {
+            "pattern": "^([A-Z0-9]+)_.*",
+            "group": 1
+          }
+        },
+        "patient_name": {
+          "source_field": "title",
+          "_extract": {
+            "pattern": "^[A-Z0-9]+_(.+)$",
+            "group": 1
+          }
+        },
+        "study_description": {
+          "source_field": "properties.project.formattedName",
+          "_extract": {
+            "pattern": "^([^(]+)",
+            "group": 1
+          }
+        },
+        "accession_number": "id"
       }
     }
   ]
@@ -332,32 +334,32 @@ export CALPENDO_PASSWORD=<your_calpendo_password>
       "3T": "MR",
       "EEG": "EEG",
       "Mock": "OT"
-    },
-    "field_mapping": {
-      "patient_id": {
-        "source_field": "title",
-        "_extract": {
-          "pattern": "^([A-Z0-9]+)_.*",
-          "group": 1
-        }
-      },
-      "patient_name": {
-        "source_field": "title",
-        "_extract": {
-          "pattern": "^[A-Z0-9]+_(.+)$",
-          "group": 1
-        }
-      },
-      "study_description": {
-        "source_field": "properties.project.formattedName",
-        "_extract": {
-          "pattern": "^([^(]+)",
-          "group": 1
-        }
-      },
-      "accession_number": "id",
-      "study_instance_uid": "id"
     }
+  },
+  "field_mapping": {
+    "patient_id": {
+      "source_field": "title",
+      "_extract": {
+        "pattern": "^([A-Z0-9]+)_.*",
+        "group": 1
+      }
+    },
+    "patient_name": {
+      "source_field": "title",
+      "_extract": {
+        "pattern": "^[A-Z0-9]+_(.+)$",
+        "group": 1
+      }
+    },
+    "study_description": {
+      "source_field": "properties.project.formattedName",
+      "_extract": {
+        "pattern": "^([^(]+)",
+        "group": 1
+      }
+    },
+    "accession_number": "id",
+    "study_instance_uid": "id"
   }
 }
 ```
@@ -370,7 +372,9 @@ export CALPENDO_PASSWORD=<your_calpendo_password>
 - **`lookback_multiplier`** (optional, default: 2): Rolling window multiplier for incremental sync
 - **`timezone`** (optional, default: `"America/Edmonton"`): Timezone for booking timestamps
 - **`resource_modality_mapping`** (optional): Map resource names to DICOM modality codes
-- **`field_mapping`**: Maps Calpendo fields to worklist fields
+- **`field_mapping`** (at data source root): Maps Calpendo fields to worklist fields
+- **`window_mode`** (optional): `rolling` (default) or `daily`
+- **`daily_window`** (optional): `{"start_time": [h, m], "end_time": [h, m]}`
   - Use **`_extract`** for regex-based field extraction:
     - **`pattern`**: Regular expression pattern (use `\\` for escaping in JSON)
     - **`group`**: Capture group number (0 = full match, 1+ = capture groups)
@@ -421,6 +425,10 @@ Common patterns for extracting information from Calpendo booking titles:
 - Test regex patterns with sample data before deployment
 - Check JSON escaping (use `\\` for backslashes)
 - Set logging to DEBUG to see extraction warnings
+
+### Workflow Notes
+
+- MPPS status updates are owned by N-CREATE/N-SET; sync operations do not overwrite existing `performed_procedure_step_status` values.
 
 For more details, see the [Calpendo plugin quickstart](specs/002-calpendo-plugin/quickstart.md).
 

@@ -31,6 +31,7 @@ Data handling must be robust, traceable, and HIPAA-conscious. All database opera
 - Database transactions must be atomic
 - Data validation at every integration point
 - Audit trails for all status changes
+- Synchronization must not overwrite `performed_procedure_step_status` for existing records; MPPS is the source of truth
 
 ### IV. Test-Driven DICOM Integration
 All DICOM service handlers (C-FIND, N-CREATE, N-SET) require comprehensive integration tests with pynetdicom. Tests must verify both success and failure scenarios. Mock DICOM clients/servers required for testing MWL and MPPS services without requiring actual medical equipment.
@@ -80,6 +81,7 @@ scheduled_start_time, performed_procedure_step_status
 - Implements N-SET for procedure step updates
 - Status tracking: SCHEDULED → IN_PROGRESS → COMPLETED/DISCONTINUED
 - Maintains referential integrity between MWL and MPPS instances
+- Owns procedure status updates; sync jobs must not override MPPS state
 
 **Service Handlers** (all in `mwl_server.py`):
 - `handle_find_request()`: C-FIND query processing
@@ -93,6 +95,16 @@ scheduled_start_time, performed_procedure_step_status
 - Configurable field mapping via `redcap2wl` configuration
 - Site-specific protocol mapping support
 - Incremental sync with change detection
+
+**Calpendo Secondary Data Source**:
+- WebDAV-based booking extraction
+- Resource-based filtering and date windows
+- Optional `window_mode` and `daily_window` settings for daily schedules
+- Field mapping defined at the data source root for consistent schema
+
+**Data Source Tracking**:
+- Every worklist entry must record its `data_source`
+- Insert/update logic must be data-source agnostic
 
 **Synchronization Engine** (`redcap_to_db.py`):
 - `sync_redcap_to_db()`: One-time synchronization
@@ -240,6 +252,32 @@ tests/
     "scheduled_date": "mri_date",
     "scheduled_time": "mri_time"
   }
+}
+```
+
+**Multi-Source Configuration** (recommended):
+```json
+{
+  "data_sources": [
+    {
+      "name": "main_redcap",
+      "type": "redcap",
+      "enabled": true,
+      "sync_interval": 60,
+      "config": {"site_id": "792", "protocol": "BRAIN_MRI_3T"},
+      "field_mapping": {"study_id": "study_id"}
+    },
+    {
+      "name": "calpendo_mri",
+      "type": "calpendo",
+      "enabled": true,
+      "sync_interval": 60,
+      "window_mode": "daily",
+      "daily_window": {"start_time": [6, 0], "end_time": [20, 0]},
+      "config": {"base_url": "https://example", "resources": ["3T Diagnostic"]},
+      "field_mapping": {"patient_id": {"source_field": "title"}}
+    }
+  ]
 }
 ```
 
