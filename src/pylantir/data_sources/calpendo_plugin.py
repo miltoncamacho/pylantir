@@ -124,7 +124,7 @@ class CalendoPlugin(DataSourcePlugin):
                 if "pattern" not in extract_config:
                     return (False, f"Field '{target_field}' has _extract but missing 'pattern' key")
 
-        self.logger.info(f"Calpendo plugin validated: {len(config['resources'])} resources")
+        self.logger.debug(f"Calpendo plugin validated: {len(config['resources'])} resources")
         return (True, "")
 
     def fetch_entries(
@@ -148,7 +148,7 @@ class CalendoPlugin(DataSourcePlugin):
                     list(field_mapping.keys()),
                 )
             else:
-                self.logger.info(
+                self.logger.debug(
                     "Calpendo field_mapping keys: %s",
                     list(field_mapping.keys()),
                 )
@@ -163,7 +163,7 @@ class CalendoPlugin(DataSourcePlugin):
                     datetime(now.year, now.month, now.day)
                 )
                 end_time = start_time + timedelta(days=1)
-                self.logger.info(
+                self.logger.debug(
                     "Using daily window from %s to %s",
                     start_time.isoformat(),
                     end_time.isoformat(),
@@ -173,14 +173,14 @@ class CalendoPlugin(DataSourcePlugin):
                 start_time = now - timedelta(seconds=interval * lookback_multiplier)
                 end_time = now + timedelta(hours=24)
 
-            self.logger.info(
+            self.logger.debug(
                 f"Fetching Calpendo bookings from {start_time.isoformat()} "
                 f"to {end_time.isoformat()}"
             )
 
             # Fetch booking IDs in window
             booking_ids = self._fetch_bookings_in_window(start_time, end_time)
-            self.logger.info(
+            self.logger.debug(
                 "Found %s bookings in window (%s to %s)",
                 len(booking_ids),
                 start_time.isoformat(),
@@ -200,7 +200,7 @@ class CalendoPlugin(DataSourcePlugin):
                 if entry:  # Skip invalid bookings
                     entries.append(entry)
 
-            self.logger.info(f"Transformed {len(entries)} valid worklist entries")
+            self.logger.debug(f"Transformed {len(entries)} valid worklist entries")
 
             # Clean up
             gc.collect()
@@ -255,7 +255,7 @@ class CalendoPlugin(DataSourcePlugin):
             self.logger.debug(f"Fetching bookings from: {url}")
             response = requests.get(url, auth=auth, timeout=30)
             response.raise_for_status()
-            self.logger.info(
+            self.logger.debug(
                 "Calpendo booking list response OK (status %s)",
                 response.status_code,
             )
@@ -284,7 +284,7 @@ class CalendoPlugin(DataSourcePlugin):
                 self.logger.warning(f"Booking {booking_id} not found (deleted?)")
                 return None
             response.raise_for_status()
-            self.logger.info(
+            self.logger.debug(
                 "Calpendo booking detail response OK (status %s) for booking %s",
                 response.status_code,
                 booking_id,
@@ -293,7 +293,7 @@ class CalendoPlugin(DataSourcePlugin):
             booking = response.json()
 
             properties = booking.get("properties") if isinstance(booking.get("properties"), dict) else {}
-            self.logger.info(
+            self.logger.debug(
                 "Calpendo booking payload summary for %s: biskitType=%s keys=%s properties_keys=%s title=%s properties.title=%s formattedName=%s dateRange=%s status=%s",
                 booking_id,
                 booking.get("biskitType"),
@@ -329,7 +329,7 @@ class CalendoPlugin(DataSourcePlugin):
         try:
             response = requests.get(url, auth=auth, timeout=10)
             response.raise_for_status()
-            self.logger.info(
+            self.logger.debug(
                 "Calpendo MRI operator response OK (status %s) for booking %s",
                 response.status_code,
                 booking_id,
@@ -355,7 +355,7 @@ class CalendoPlugin(DataSourcePlugin):
         # Filter out None (deleted bookings)
         bookings = [b for b in results if b is not None]
 
-        self.logger.info(f"Fetched {len(bookings)}/{len(booking_ids)} booking details")
+        self.logger.debug(f"Fetched {len(bookings)}/{len(booking_ids)} booking details")
         return bookings
 
     def _extract_field_with_regex(self, source_value: str, extract_config: Dict) -> str:
@@ -510,7 +510,7 @@ class CalendoPlugin(DataSourcePlugin):
                 source_key = mapping_config.get("source_field")
                 if source_key:
                     source_value = self._get_nested_value(booking, source_key)
-                    self.logger.info(
+                    self.logger.debug(
                         "Calpendo mapping: target=%s source=%s raw_value=%s",
                         target_field,
                         source_key,
@@ -522,7 +522,7 @@ class CalendoPlugin(DataSourcePlugin):
                     source_value = self._extract_field_with_regex(
                         source_value, mapping_config["_extract"]
                     )
-                    self.logger.info(
+                    self.logger.debug(
                         "Calpendo extraction: target=%s extracted_value=%s",
                         target_field,
                         source_value,
@@ -530,7 +530,7 @@ class CalendoPlugin(DataSourcePlugin):
             else:
                 # Simple string mapping
                 source_value = self._get_nested_value(booking, mapping_config)
-                self.logger.info(
+                self.logger.debug(
                     "Calpendo mapping: target=%s source=%s raw_value=%s",
                     target_field,
                     mapping_config,
@@ -594,7 +594,7 @@ class CalendoPlugin(DataSourcePlugin):
             parsed = self._parse_date_range_dates(booking.get("properties", {}).get("dateRange"))
             if parsed:
                 start_dt, end_dt = parsed
-                self.logger.info(
+                self.logger.debug(
                     "Calpendo dateRange parsed: booking_id=%s start=%s end=%s",
                     booking.get("id"),
                     start_dt,
