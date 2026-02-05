@@ -9,6 +9,7 @@ Version: 1.0.0
 
 import os
 import logging
+import re
 from redcap.project import Project  # type: ignore
 import uuid
 from datetime import datetime, timedelta
@@ -279,6 +280,9 @@ class REDCapPlugin(DataSourcePlugin):
             if "scheduled_start_time" not in entry:
                 entry["scheduled_start_time"] = record.get("mri_time") or record.get("scheduled_time")
 
+            entry["scheduled_start_date"] = self._normalize_legacy_date(entry.get("scheduled_start_date"))
+            entry["scheduled_start_time"] = self._normalize_legacy_time(entry.get("scheduled_start_time"))
+
             # Apply protocol name when available
             if "protocol_name" not in entry and self._protocol is not None:
                 if isinstance(self._protocol, str):
@@ -289,6 +293,60 @@ class REDCapPlugin(DataSourcePlugin):
             entries.append(entry)
 
         return entries
+
+    def _normalize_legacy_date(self, value) -> str | None:
+        """Normalize date values to legacy YYYY-MM-DD."""
+        if value is None:
+            return None
+
+        if isinstance(value, (int, float)):
+            value = str(int(value))
+
+        value = str(value).strip()
+        if not value:
+            return None
+
+        match = re.match(r"^(\d{4})[-/.](\d{2})[-/.](\d{2})$", value)
+        if match:
+            return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+
+        if len(value) == 8 and value.isdigit():
+            return f"{value[0:4]}-{value[4:6]}-{value[6:8]}"
+
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d")
+        except Exception:
+            self.logger.debug(f"Unrecognized date format: {value}")
+            return value
+
+    def _normalize_legacy_time(self, value) -> str | None:
+        """Normalize time values to legacy HH:MM."""
+        if value is None:
+            return None
+
+        if isinstance(value, (int, float)):
+            value = str(int(value))
+
+        value = str(value).strip()
+        if not value:
+            return None
+
+        match = re.match(r"^(\d{2}):(\d{2})(?::(\d{2}))?$", value)
+        if match:
+            hh, mm, _ss = match.groups()
+            return f"{hh}:{mm}"
+
+        if len(value) == 6 and value.isdigit():
+            return f"{value[0:2]}:{value[2:4]}"
+
+        if len(value) == 4 and value.isdigit():
+            return f"{value[0:2]}:{value[2:4]}"
+
+        if len(value) == 2 and value.isdigit():
+            return f"{value}:00"
+
+        self.logger.debug(f"Unrecognized time format: {value}")
+        return value
 
     def _generate_instance_uid(self) -> str:
         """Generate a valid Study Instance UID."""
