@@ -5,9 +5,9 @@
     <img src="pylantir.png" alt="Pylantir" width="50%">
 </div>
 
-This project's goal is to significantly reduce the number of human-related errors when manualy registering participants for medical imaging procedures.
+This project's goal is to significantly reduce the number of human-related errors when manually registering participants for medical imaging procedures.
 
-It effectively provides a python based DICOM Modality Worklist Server (SCP) and Modality Performed Procedure Step (SCP) able to receive requests from medical imaging equipemnt based on DICOM network comunication (e.g., a C-FIND, N-CREATE, N-SET requests).
+It effectively provides a python based DICOM Modality Worklist Server (SCP) and Modality Performed Procedure Step (SCP) able to receive requests from medical imaging equipment based on DICOM network communication (e.g., C-FIND, N-CREATE, N-SET requests).
 
 It will build/update a database based on the information entered in the study-related REDCap database using a REDCap API (You will require to have API access to the study).
 
@@ -91,7 +91,7 @@ cd pylantir/tests
 Query the worklist database to check that you have some entries using:
 
 ```bash
-python query-db.py
+python tests/query_db.py
 ```
 
 Then, you can get a StudyUID from one of the entries to test the MPPS workflow. For example: 1.2.840.10008.3.1.2.3.4.55635351412689303463019139483773956632
@@ -99,19 +99,19 @@ Then, you can get a StudyUID from one of the entries to test the MPPS workflow. 
 Take this and run a create action to mark the worklist Procedure Step Status as IN_PROGRESS
 
 ```bash
-python test-mpps.py --AEtitle MWL_SERVER --mpps_action create --callingAEtitle MWL_TESTER --ip 127.0.0.1 --port 4242 --study_uid 1.2.840.10008.3.1.2.3.4.55635351412689303463019139483773956632
+python tests/mpps_tester.py --AEtitle MWL_SERVER --mpps_action create --callingAEtitle MWL_TESTER --ip 127.0.0.1 --port 4242 --study_uid 1.2.840.10008.3.1.2.3.4.55635351412689303463019139483773956632
 ```
 
-You can verify that this in fact modified your database re-running:
+You can verify that this in fact modified your database by re-running:
 
 ```bash
-python query-db.py
+python tests/query_db.py
 ```
 
-Finally, you can also simulate the pocedure completion efectively updating the Procedure Step Status to COMPLETED or DISCONTINUED:
+Finally, you can also simulate the procedure completion, effectively updating the Procedure Step Status to COMPLETED or DISCONTINUED:
 
 ```bash
-python test-mpps.py --AEtitle MWL_SERVER --mpps_action set --mpps_status COMPLETED --callingAEtitle MWL_TESTER --ip 127.0.0.1 --port 4242 --study_uid 1.2.840.10008.3.1.2.3.4.55635351412689303463019139483773956632 --sop_uid 1.2.840.10008.3.1.2.3.4.187176383255263644225774937658729238426
+python tests/mpps_tester.py --AEtitle MWL_SERVER --mpps_action set --mpps_status COMPLETED --callingAEtitle MWL_TESTER --ip 127.0.0.1 --port 4242 --study_uid 1.2.840.10008.3.1.2.3.4.55635351412689303463019139483773956632 --sop_uid 1.2.840.10008.3.1.2.3.4.187176383255263644225774937658729238426
 ```
 
 ## Usage
@@ -222,7 +222,7 @@ The new configuration format uses a `data_sources` array to define one or more d
 - **`config`**: Source-specific configuration
   - For REDCap: `site_id`, `protocol`, and optional API credentials
 - **`field_mapping`**: Maps source fields to DICOM worklist fields
-- **`window_mode`** (Calpendo optional): `rolling` (default) or `daily`
+- **`window_mode`** (Calpendo optional): `rolling` (default) or `today`
 - **`daily_window`** (Calpendo optional): `{"start_time": [h, m], "end_time": [h, m]}`
 
 ### Multiple Data Sources Example
@@ -373,7 +373,7 @@ export CALPENDO_PASSWORD=<your_calpendo_password>
 - **`timezone`** (optional, default: `"America/Edmonton"`): Timezone for booking timestamps
 - **`resource_modality_mapping`** (optional): Map resource names to DICOM modality codes
 - **`field_mapping`** (at data source root): Maps Calpendo fields to worklist fields
-- **`window_mode`** (optional): `rolling` (default) or `daily`
+- **`window_mode`** (optional): `rolling` (default) or `today`
 - **`daily_window`** (optional): `{"start_time": [h, m], "end_time": [h, m]}`
   - Use **`_extract`** for regex-based field extraction:
     - **`pattern`**: Regular expression pattern (use `\\` for escaping in JSON)
@@ -429,6 +429,7 @@ Common patterns for extracting information from Calpendo booking titles:
 ### Workflow Notes
 
 - MPPS status updates are owned by N-CREATE/N-SET; sync operations do not overwrite existing `performed_procedure_step_status` values.
+- Calpendo booking times are interpreted in the configured local timezone and stored in the legacy formats `YYYY-MM-DD` (date) and `HH:MM` (time).
 
 For more details, see the [Calpendo plugin quickstart](specs/002-calpendo-plugin/quickstart.md).
 
@@ -485,7 +486,7 @@ This is particularly useful for production deployments with frequent synchroniza
 
 ## FastAPI REST API (Optional)
 
-**New in v0.2.0**: Pylantir now includes an optional REST API for programmatic access to worklist data and user management.
+Pylantir now includes an optional REST API for programmatic access to worklist data and user management.
 
 ### Installation with API Support
 
@@ -803,6 +804,6 @@ Control Cross-Origin Resource Sharing (CORS) for web frontend integration:
 
 ## Clean Stop of the MWL and Database Sync
 
-To cleanly stop the MWL server and ensure the database syncronization properly, press `Ctrl + C` (you might need to press it twice).
+To cleanly stop the MWL server and ensure the database synchronization properly, press `Ctrl + C` (you might need to press it twice).
 
 To stop the API server, use `Ctrl + C` in the terminal where it's running.
