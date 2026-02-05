@@ -106,12 +106,16 @@ scheduled_start_time, performed_procedure_step_status
 - Every worklist entry must record its `data_source`
 - Insert/update logic must be data-source agnostic
 
-**Synchronization Engine** (`redcap_to_db.py`):
-- `sync_redcap_to_db()`: One-time synchronization
-- `sync_redcap_to_db_repeatedly()`: Continuous background sync
-- Configurable intervals with operation time windows
-- Atomic transactions with rollback on failure
-- Duplicate detection and handling
+**Legacy Date/Time Compatibility**:
+- Persist `scheduled_start_date` as `YYYY-MM-DD` and `scheduled_start_time` as `HH:MM`
+- Calpendo uses the configured local timezone for booking start times
+- REDCap and Calpendo normalization must preserve legacy formats to avoid DB regressions
+
+**Synchronization Engine** (`cli/run.py`, modular sources):
+- Orchestrates multi-source sync loops using `data_sources/*` plugins
+- Normalizes scheduled date/time fields to legacy formats before DB insert/update
+- Uses atomic transactions with rollback on failure
+- Handles duplicate detection and updates per data source
 
 **Configuration-Driven Field Mapping**:
 ```json
@@ -135,8 +139,15 @@ src/pylantir/
 ├── models.py               # SQLAlchemy database schema
 ├── db_setup.py             # Database connection & session management
 ├── mwl_server.py           # DICOM MWL/MPPS service handlers
-├── redcap_to_db.py         # REDCap synchronization engine
+├── redcap_to_db.py         # Legacy REDCap synchronization engine
 ├── populate_db.py          # Database population utilities
+├── data_sources/           # Modular data source plugins
+│   ├── base.py              # Plugin interface + shared utilities
+│   ├── redcap_plugin.py     # REDCap plugin
+│   └── calpendo_plugin.py   # Calpendo plugin
+├── auth_models.py          # Auth DB models (API)
+├── auth_utils.py           # Auth helpers (API)
+├── api_server.py           # FastAPI endpoints (optional)
 ├── cli/
 │   ├── __init__.py
 │   └── run.py              # CLI command interface & argument parsing
@@ -145,11 +156,23 @@ src/pylantir/
     └── mwl_config.json     # Default configuration template
 ```
 
+**Top-Level Repository Structure**:
+```
+docs/          # Documentation + developer guides
+migrations/    # SQL migration scripts
+scripts/       # Operational utilities
+specs/         # Design specs and contracts
+src/           # Application source
+tests/         # Unit + integration tests
+run_test/      # Local test harness and fixtures
+```
+
 **Module Responsibilities**:
 - `models.py`: WorklistItem ORM model with DICOM-compliant field definitions
 - `db_setup.py`: Database engine, session factory, and connection lifecycle
 - `mwl_server.py`: DICOM service event handlers and dataset conversions
-- `redcap_to_db.py`: REDCap API integration and synchronization logic
+- `redcap_to_db.py`: Legacy REDCap API integration and synchronization logic
+- `data_sources/*`: Modular data source plugins for REDCap/Calpendo
 - `cli/run.py`: Command-line interface, argument parsing, and workflow orchestration
 
 ### Coding Standards
@@ -293,7 +316,7 @@ DEBUG=False
 ### Version Management
 
 **Semantic Versioning** (`pyproject.toml`):
-- **MAJOR.MINOR.PATCH** (currently 0.1.3)
+- **MAJOR.MINOR.PATCH** (currently 0.2.3)
 - **MAJOR**: Breaking API changes, CLI interface changes
 - **MINOR**: New features, backwards-compatible functionality
 - **PATCH**: Bug fixes, documentation updates, dependency updates
