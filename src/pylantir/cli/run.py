@@ -414,7 +414,7 @@ def main() -> None:
                                 delta = dt_start_today - dt_end_yesterday
                                 extended_interval = delta.total_seconds()
                                 # temporary increase interval to cover gap since last sync
-                                extended_interval += 60000
+                                # extended_interval += 6000000
                                 logging.info(f"[{source_name}] First sync of the day at {now_time}")
 
                             # Fetch entries using plugin
@@ -442,25 +442,30 @@ def main() -> None:
                                             if value is None:
                                                 return None
                                             if hasattr(value, "strftime"):
-                                                return value.strftime("%Y%m%d")
-                                            value_str = str(value)
+                                                return value.strftime("%Y-%m-%d")
+                                            value_str = str(value).strip()
                                             if "-" in value_str and len(value_str) >= 10:
-                                                return value_str[:10].replace("-", "")
+                                                return value_str[:10]
+                                            if len(value_str) == 8 and value_str.isdigit():
+                                                return f"{value_str[0:4]}-{value_str[4:6]}-{value_str[6:8]}"
                                             return value_str
 
                                         def _format_time(value):
                                             if value is None:
                                                 return None
                                             if hasattr(value, "strftime"):
-                                                return value.strftime("%H%M%S")
-                                            value_str = str(value)
+                                                return value.strftime("%H:%M")
+                                            value_str = str(value).strip()
                                             if ":" in value_str:
                                                 parts = value_str.split(":")
                                                 if len(parts) >= 2:
                                                     hh = parts[0].zfill(2)
                                                     mm = parts[1].zfill(2)
-                                                    ss = parts[2].zfill(2) if len(parts) >= 3 else "00"
-                                                    return f"{hh}{mm}{ss}"
+                                                    return f"{hh}:{mm}"
+                                            if len(value_str) == 6 and value_str.isdigit():
+                                                return f"{value_str[0:2]}:{value_str[2:4]}"
+                                            if len(value_str) == 4 and value_str.isdigit():
+                                                return f"{value_str[0:2]}:{value_str[2:4]}"
                                             return value_str
 
                                         for record in entries:
