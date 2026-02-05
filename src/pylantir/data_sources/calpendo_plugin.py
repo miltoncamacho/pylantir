@@ -408,9 +408,9 @@ class CalendoPlugin(DataSourcePlugin):
 
         return start_dt, end_dt
 
-    def _convert_to_utc(self, dt: datetime) -> datetime:
-        """Convert timezone-aware datetime to UTC."""
-        return dt.astimezone(pytz.UTC)
+    def _convert_to_local(self, dt: datetime) -> datetime:
+        """Convert timezone-aware datetime to configured local timezone."""
+        return dt.astimezone(self._timezone)
 
     def _map_status_to_dicom(self, calpendo_status: str) -> str:
         """Map Calpendo status to DICOM procedure step status."""
@@ -575,14 +575,14 @@ class CalendoPlugin(DataSourcePlugin):
         if formatted_name:
             try:
                 start_dt, end_dt = self._parse_formatted_name_dates(formatted_name)
-                start_utc = self._convert_to_utc(start_dt)
-                end_utc = self._convert_to_utc(end_dt)
+                start_local = self._convert_to_local(start_dt)
+                end_local = self._convert_to_local(end_dt)
 
-                entry["scheduled_start_date"] = start_utc.date()
-                entry["scheduled_start_time"] = start_utc.time()
+                entry["scheduled_start_date"] = start_local.strftime("%Y-%m-%d")
+                entry["scheduled_start_time"] = start_local.strftime("%H:%M")
 
                 # Calculate duration in minutes
-                duration = (end_utc - start_utc).total_seconds() / 60
+                duration = (end_local - start_local).total_seconds() / 60
                 entry["scheduled_procedure_step_duration"] = int(duration)
 
             except Exception as e:
@@ -600,13 +600,13 @@ class CalendoPlugin(DataSourcePlugin):
                     start_dt,
                     end_dt,
                 )
-                start_utc = self._convert_to_utc(start_dt)
-                end_utc = self._convert_to_utc(end_dt)
+                start_local = self._convert_to_local(start_dt)
+                end_local = self._convert_to_local(end_dt)
 
-                entry["scheduled_start_date"] = start_utc.date()
-                entry["scheduled_start_time"] = start_utc.time()
+                entry["scheduled_start_date"] = start_local.strftime("%Y-%m-%d")
+                entry["scheduled_start_time"] = start_local.strftime("%H:%M")
 
-                duration = (end_utc - start_utc).total_seconds() / 60
+                duration = (end_local - start_local).total_seconds() / 60
                 entry["scheduled_procedure_step_duration"] = int(duration)
             else:
                 self.logger.warning(
