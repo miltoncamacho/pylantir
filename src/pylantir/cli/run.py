@@ -11,6 +11,7 @@ import sys
 import importlib.util
 from dotenv import set_key
 from concurrent.futures import ThreadPoolExecutor  # for background thread
+from sqlalchemy import or_
 
 lgr = logging.getLogger(__name__)
 
@@ -470,12 +471,20 @@ def main() -> None:
 
                                         for record in entries:
                                             patient_id = record.get("patient_id")
+                                            patient_name = record.get("patient_name")
                                             lgr.info(f"[{source_name}] Processing record for patient_id: {patient_id}")
                                             if not patient_id:
                                                 lgr.info(f"[{source_name}] Skipping record with missing patient_id")
                                                 continue
 
-                                            existing_entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
+                                            if patient_name:
+                                                existing_entry = (
+                                                    session.query(WorklistItem)
+                                                    .filter_by(patient_id=patient_id, patient_name=patient_name)
+                                                    .first()
+                                                )
+                                            else:
+                                                existing_entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
 
                                             scheduled_start_date = _format_date(record.get("scheduled_start_date"))
                                             scheduled_start_time = _format_time(record.get("scheduled_start_time"))
