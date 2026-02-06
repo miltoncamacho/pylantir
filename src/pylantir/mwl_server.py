@@ -178,9 +178,16 @@ def handle_mpps_n_create(event):
 
     # Update database: Set status to IN_PROGRESS
     patient_id = ds.get("PatientID", None)
+    patient_name = ds.get("PatientName", None)
     session = Session()
     if patient_id:
-        entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
+        if patient_name:
+            entry = session.query(WorklistItem).filter_by(
+                patient_id=patient_id,
+                patient_name=str(patient_name),
+            ).first()
+        else:
+            entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
         if entry:
             entry.performed_procedure_step_status = "IN_PROGRESS"
             session.commit()
@@ -210,10 +217,17 @@ def handle_mpps_n_set(event):
 
     new_status = ds.get("PerformedProcedureStepStatus", None)
     patient_id = ds.get("PatientID", None)
+    patient_name = ds.get("PatientName", None)
 
     session = Session()
     if patient_id and new_status:
-        entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
+        if patient_name:
+            entry = session.query(WorklistItem).filter_by(
+                patient_id=patient_id,
+                patient_name=str(patient_name),
+            ).first()
+        else:
+            entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
         if entry:
             if new_status.upper() == "COMPLETED":
                 entry.performed_procedure_step_status = "COMPLETED"
