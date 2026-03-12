@@ -671,6 +671,13 @@ class CalendoPlugin(DataSourcePlugin):
                     )
                 return None
 
+        patient_name = entry.get("patient_name")
+        if patient_name is not None:
+            patient_name = str(patient_name)
+            if patient_name and "^" not in patient_name:
+                patient_name = "^" + patient_name
+            entry["patient_name"] = patient_name
+
         return entry
 
     def _compute_booking_hash(self, booking: Dict) -> str:
