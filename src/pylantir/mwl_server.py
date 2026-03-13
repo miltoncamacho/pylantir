@@ -232,15 +232,15 @@ def handle_mpps_n_set(event):
             if new_status.upper() == "COMPLETED":
                 entry.performed_procedure_step_status = "COMPLETED"
                 session.commit()
-                lgr.info(f"DB updated: PatientID {patient_id} set to COMPLETED")
+                lgr.info(f"DB updated: PatientID: {patient_id} PatientName: {patient_name if patient_name else 'NaN'} set to COMPLETED")
             elif new_status.upper() == "DISCONTINUED":
                 entry.performed_procedure_step_status = "DISCONTINUED"
                 session.commit()
-                lgr.info(f"DB updated: PatientID {patient_id} set to DISCONTINUED")
+                lgr.info(f"DB updated: PatientID: {patient_id} PatientName: {patient_name if patient_name else 'NaN'} set to DISCONTINUED")
             else:
                 lgr.warning(f"MPPS N-SET: Unrecognized status {new_status}")
         else:
-            lgr.warning(f"MPPS N-SET: No DB entry found for PatientID {patient_id}")
+            lgr.warning(f"MPPS N-SET: No DB entry found for PatientID: {patient_id} PatientName: {patient_name if patient_name else 'NaN'}")
     else:
         lgr.warning("MPPS N-SET: Missing PatientID or status. No DB update.")
 

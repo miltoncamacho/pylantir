@@ -352,7 +352,7 @@ def main() -> None:
                 try:
                     # Get and instantiate the plugin
                     PluginClass = get_plugin(source_type)
-                    lgr.info(f"[{source_name}] Initializing {source_type} plugin")
+                    lgr.debug(f"[{source_name}] Initializing {source_type} plugin")
 
                     plugin = PluginClass()
 

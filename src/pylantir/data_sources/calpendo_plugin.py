@@ -562,7 +562,7 @@ class CalendoPlugin(DataSourcePlugin):
             study_description = entry.get("study_description")
             normalized_description = study_description.strip() if isinstance(study_description, str) else None
             if not normalized_description or normalized_description not in allowed_studies:
-                self.logger.info(
+                self.logger.debug(
                     "Skipping booking %s: study_description not allowed (value=%s allowed=%s)",
                     booking.get("id"),
                     study_description,
