@@ -22,7 +22,7 @@
                 ]
             },
             "config": {
-                "site_id": "792",
+                "site": "792",
                 "protocol": {
                     "792": "BRAIN_MRI_3T",
                     "mapping": "GEHC"
@@ -54,7 +54,7 @@
                 ]
             },
             "config": {
-                "site_id": "793",
+                "site": "793",
                 "protocol": {
                     "793": "BRAIN_MRI_1.5T"
                 }

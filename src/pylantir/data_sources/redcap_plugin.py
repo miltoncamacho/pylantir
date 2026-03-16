@@ -29,7 +29,7 @@ class REDCapPlugin(DataSourcePlugin):
     processing (avoiding pandas DataFrames).
 
     Configuration Requirements:
-        - site_id: Site identifier
+        - site: Site identifier
         - protocol: Protocol mapping dictionary
 
     Environment Variables:
@@ -46,9 +46,11 @@ class REDCapPlugin(DataSourcePlugin):
 
     def validate_config(self, config: Dict) -> Tuple[bool, str]:
         """Validate REDCap plugin configuration."""
+        site = config.get("site") or config.get("site_id")
+
         # Check required config keys
-        if "site_id" not in config:
-            return (False, "Missing required configuration key: site_id")
+        if not site:
+            return (False, "Missing required configuration key: site")
 
         if "protocol" not in config:
             return (False, "Missing required configuration key: protocol")
@@ -67,10 +69,10 @@ class REDCapPlugin(DataSourcePlugin):
         if not self._api_token:
             return (False, "REDCAP_API_TOKEN environment variable not set")
 
-        self._site_id = config.get("site_id")
+        self._site_id = site
         self._protocol = config.get("protocol")
 
-        self.logger.info(f"REDCap plugin validated for site {config['site_id']}")
+        self.logger.info(f"REDCap plugin validated for site {site}")
         return (True, "")
 
     def fetch_entries(
@@ -257,7 +259,7 @@ class REDCapPlugin(DataSourcePlugin):
 
             # Construct DICOM identifiers
             patient_name = f"cpip-id-{study_id}^fa-{family_id}"
-            patient_id = f"sub_{study_id}_ses_{ses_id}_fam_{family_id}"
+            patient_id = f"sub_{study_id}_ses_{ses_id}_fam_{family_id}_site_{self._site_id}"
 
             # Build entry with mapped fields
             entry = {

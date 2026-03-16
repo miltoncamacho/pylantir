@@ -198,7 +198,7 @@ def load_config(config_path=None):
                     {"start_time": [0, 0], "end_time": [23, 59]}
                 ),
                 "config": {
-                    "site_id": config_data.get("site"),
+                    "site": config_data.get("site"),
                     "protocol": config_data.get("protocol", {}),
                 },
                 "field_mapping": config_data.get("redcap2wl", {})
@@ -433,8 +433,9 @@ def main() -> None:
                                     lgr.info(f"[{source_name}] Fetched {len(entries)} entries")
 
                                     # Get source-specific config
-                                    site_id = source_config.get("config", {}).get("site_id")
-                                    protocol = config.get("protocol", {})
+                                    source_settings = source_config.get("config", {})
+                                    site_id = source_settings.get("site") or source_settings.get("site_id")
+                                    protocol = source_settings.get("protocol", {})
 
                                     # Process entries (source-agnostic)
                                     session = Session()

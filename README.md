@@ -182,7 +182,7 @@ The new configuration format uses a `data_sources` array to define one or more d
         "end_time": [23, 59]
       },
       "config": {
-        "site_id": "792",
+        "site": "792",
         "protocol": "BRAIN_MRI_3T"
       },
       "field_mapping": {
@@ -220,7 +220,7 @@ The new configuration format uses a `data_sources` array to define one or more d
   - `start_time`: `[hours, minutes]` - Start of operation window
   - `end_time`: `[hours, minutes]` - End of operation window
 - **`config`**: Source-specific configuration
-  - For REDCap: `site_id`, `protocol`, and optional API credentials
+  - For REDCap: `site`, `protocol`, and optional API credentials. `site_id` is still accepted for backward compatibility.
 - **`field_mapping`**: Maps source fields to DICOM worklist fields
 - **`window_mode`** (Calpendo optional): `rolling` (default) or `today`
 - **`daily_window`** (Calpendo optional): `{"start_time": [h, m], "end_time": [h, m]}`
@@ -239,7 +239,7 @@ You can configure multiple data sources to sync simultaneously:
       "enabled": true,
       "sync_interval": 60,
       "config": {
-        "site_id": "792",
+        "site": "792",
         "protocol": "BRAIN_MRI_3T"
       },
       "field_mapping": { "study_id": "study_id" }
@@ -250,7 +250,7 @@ You can configure multiple data sources to sync simultaneously:
       "enabled": true,
       "sync_interval": 120,
       "config": {
-        "site_id": "793",
+        "site": "793",
         "protocol": "CARDIAC_MRI"
       },
       "field_mapping": { "patient_id": "patient_id" }
@@ -464,7 +464,7 @@ Consider migrating to 'data_sources' format for better flexibility.
 
 **Migration Note**: To migrate from legacy to new format:
 1. Rename `redcap2wl` → `field_mapping`
-2. Move `site` → `config.site_id`
+2. Move `site` → `config.site`
 3. Move `protocol[site]` → `config.protocol`
 4. Move `db_update_interval` → `sync_interval`
 5. Wrap everything in a `data_sources` array with `name`, `type`, and `enabled` fields
