@@ -367,6 +367,7 @@ export CALPENDO_PASSWORD=<your_calpendo_password>
 **Calpendo Configuration Fields:**
 
 - **`base_url`**: Calpendo server URL (e.g., `https://your-institution.calpendo.com`)
+- **`api_path`** (optional, default: `"/api"`): Calpendo 11+ API root. Use `"/webdav"` only for a legacy server.
 - **`resources`**: Array of resource names to sync (e.g., scanner names)
 - **`status_filter`** (optional): Only sync bookings with this status (e.g., `"Approved"`)
 - **`lookback_multiplier`** (optional, default: 2): Rolling window multiplier for incremental sync
@@ -415,6 +416,19 @@ Common patterns for extracting information from Calpendo booking titles:
 - Verify environment variables are set correctly
 - Check Calpendo username/password are valid
 - Ensure API access is enabled for your account
+
+**Verify the API and exported fields independently:**
+
+```bash
+python3 scripts/probe_calpendo_api.py \
+  --base-url "$CALPENDO_API_URL" \
+  --resource "3T Diagnostic"
+```
+
+The probe requests JSON, checks the booking query and detail endpoints, and
+prints field paths without printing field values. Add `--legacy` to compare the
+old `/webdav` endpoints. Raw booking JSON is suppressed because it may contain
+patient information.
 
 **No Bookings Synced:**
 - Check `resources` list matches actual Calpendo resource names

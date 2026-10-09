@@ -131,3 +131,8 @@ dmypy.json
 # any database files
 *.db
 **/*.db
+
+#APPLE
+.DS_Store
+*/.DS_Store
+*/**/.DS_Store

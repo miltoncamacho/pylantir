@@ -62,6 +62,7 @@ class CalendoPlugin(DataSourcePlugin):
         self._password = None
         self._config = None
         self._timezone = None
+        self._api_path = "/api"
 
     def validate_config(self, config: Dict) -> Tuple[bool, str]:
         """
@@ -93,6 +94,7 @@ class CalendoPlugin(DataSourcePlugin):
             return (False, "CALPENDO_USERNAME and CALPENDO_PASSWORD environment variables must be set")
 
         self._base_url = config["base_url"]
+        self._api_path = "/" + config.get("api_path", "/api").strip("/")
 
         # Validate optional fields
         lookback_multiplier = config.get("lookback_multiplier", 2)
@@ -247,20 +249,25 @@ class CalendoPlugin(DataSourcePlugin):
     ) -> List[int]:
         """Query Calpendo for booking IDs in time window."""
         query = self._build_booking_query(start_time, end_time)
-        url = f"{self._base_url}/webdav/q/Calpendo.Booking/{query}"
+        url = f"{self._base_url.rstrip('/')}{self._api_path}/q/Calpendo.Booking/{query}"
 
         auth = (self._username, self._password)
 
         try:
             self.logger.debug(f"Fetching bookings from: {url}")
-            response = requests.get(url, auth=auth, timeout=30)
+            response = requests.get(
+                url,
+                auth=auth,
+                headers={"Accept": "application/json"},
+                timeout=30,
+            )
             response.raise_for_status()
             self.logger.debug(
                 "Calpendo booking list response OK (status %s)",
                 response.status_code,
             )
 
-            data = response.json()
+            data = self._decode_json_response(response, "booking list")
             booking_ids = [b["id"] for b in data.get("biskits", [])]
 
             self.logger.debug(f"Fetched {len(booking_ids)} booking IDs")
@@ -275,11 +282,16 @@ class CalendoPlugin(DataSourcePlugin):
 
     def _fetch_booking_details(self, booking_id: int) -> Optional[Dict]:
         """Fetch detailed booking information."""
-        url = f"{self._base_url}/webdav/b/Calpendo.Booking/{booking_id}"
+        url = f"{self._base_url.rstrip('/')}{self._api_path}/b/Calpendo.Booking/{booking_id}"
         auth = (self._username, self._password)
 
         try:
-            response = requests.get(url, auth=auth, timeout=10)
+            response = requests.get(
+                url,
+                auth=auth,
+                headers={"Accept": "application/json"},
+                timeout=10,
+            )
             if response.status_code == 404:
                 self.logger.warning(f"Booking {booking_id} not found (deleted?)")
                 return None
@@ -290,7 +302,7 @@ class CalendoPlugin(DataSourcePlugin):
                 booking_id,
             )
 
-            booking = response.json()
+            booking = self._decode_json_response(response, f"booking {booking_id}")
 
             properties = booking.get("properties") if isinstance(booking.get("properties"), dict) else {}
             self.logger.debug(
@@ -323,11 +335,16 @@ class CalendoPlugin(DataSourcePlugin):
 
     def _fetch_mri_operator(self, booking_id: int) -> Optional[str]:
         """Retrieve operator name for MRIScan bookings."""
-        url = f"{self._base_url}/webdav/q/MRIScan/id/eq/{booking_id}?paths=Operator.name"
+        url = f"{self._base_url.rstrip('/')}{self._api_path}/q/MRIScan/id/eq/{booking_id}?paths=Operator.name"
         auth = (self._username, self._password)
 
         try:
-            response = requests.get(url, auth=auth, timeout=10)
+            response = requests.get(
+                url,
+                auth=auth,
+                headers={"Accept": "application/json"},
+                timeout=10,
+            )
             response.raise_for_status()
             self.logger.debug(
                 "Calpendo MRI operator response OK (status %s) for booking %s",
@@ -335,7 +352,7 @@ class CalendoPlugin(DataSourcePlugin):
                 booking_id,
             )
 
-            data = response.json()
+            data = self._decode_json_response(response, f"MRI operator for booking {booking_id}")
             biskits = data.get("biskits", [])
             if biskits and len(biskits) > 0:
                 operator_data = biskits[0].get("properties", {}).get("Operator", {})
@@ -346,6 +363,26 @@ class CalendoPlugin(DataSourcePlugin):
         except Exception as e:
             self.logger.warning(f"Failed to fetch operator for booking {booking_id}: {e}")
             return None
+
+    def _decode_json_response(self, response: requests.Response, context: str) -> Dict:
+        """Decode an API response and retain useful diagnostics on format changes."""
+        content_type = response.headers.get("Content-Type", "<missing>")
+        body = response.text or ""
+        try:
+            data = response.json()
+        except requests.exceptions.JSONDecodeError as e:
+            preview = " ".join(body[:200].split()) or "<empty body>"
+            raise PluginFetchError(
+                f"Calpendo {context} returned non-JSON content "
+                f"(HTTP {response.status_code}, Content-Type {content_type}, "
+                f"final URL {response.url}, body preview: {preview!r})"
+            ) from e
+
+        if not isinstance(data, dict):
+            raise PluginFetchError(
+                f"Calpendo {context} returned {type(data).__name__}; expected a JSON object"
+            )
+        return data
 
     def _fetch_booking_details_parallel(self, booking_ids: List[int]) -> List[Dict]:
         """Fetch booking details in parallel using ThreadPoolExecutor."""
@@ -412,6 +449,15 @@ class CalendoPlugin(DataSourcePlugin):
         """Convert timezone-aware datetime to configured local timezone."""
         return dt.astimezone(self._timezone)
 
+    def _convert_to_utc(self, dt: datetime) -> datetime:
+        """Convert timezone-aware datetime to UTC.
+
+        Retained as a compatibility helper for callers that need an explicit
+        UTC value. Worklist scheduling fields are intentionally rendered in
+        the configured local timezone by ``_transform_booking_to_entry``.
+        """
+        return dt.astimezone(pytz.UTC)
+
     def _map_status_to_dicom(self, calpendo_status: str) -> str:
         """Map Calpendo status to DICOM procedure step status."""
         return self.STATUS_MAPPING.get(calpendo_status, "SCHEDULED")
@@ -449,10 +495,14 @@ class CalendoPlugin(DataSourcePlugin):
             if isinstance(value, dict):
                 value = value.get(key)
                 if value is None:
-                    return None
+                    break
             else:
-                return None
+                value = None
+                break
 
+        # Calpendo 11+ moved several former top-level booking fields (such as
+        # title and status) into the properties object. Preserve existing field
+        # mappings by transparently checking that location for simple keys.
         if value is None and len(keys) == 1 and isinstance(data, dict):
             properties = data.get("properties")
             if isinstance(properties, dict) and key_path in properties:
@@ -684,10 +734,12 @@ class CalendoPlugin(DataSourcePlugin):
         """
         Compute SHA256 hash of critical booking fields for change detection.
         """
+        properties = booking.get("properties") if isinstance(booking.get("properties"), dict) else {}
         critical_fields = {
-            "title": booking.get("title", ""),
-            "status": booking.get("status", ""),
-            "formattedName": booking.get("formattedName", ""),
+            "title": self._get_nested_value(booking, "title") or "",
+            "status": self._get_nested_value(booking, "status") or "",
+            "formattedName": self._get_nested_value(booking, "formattedName") or "",
+            "dateRange": properties.get("dateRange", ""),
             "project": self._get_nested_value(booking, "properties.project.formattedName") or "",
             "resource": self._get_nested_value(booking, "properties.resource.formattedName") or "",
         }
