@@ -381,8 +381,8 @@ def main() -> None:
 
                     # Import database and sync utilities
                     from ..db_setup import Session
-                    from ..models import WorklistItem
-                    from ..redcap_to_db import generate_instance_uid, cleanup_memory_and_connections
+                    from ..redcap_to_db import cleanup_memory_and_connections
+                    from ..worklist_sync import upsert_worklist_record
                     from datetime import datetime, time as dt_time, timedelta
                     import logging
 
@@ -440,86 +440,19 @@ def main() -> None:
                                     # Process entries (source-agnostic)
                                     session = Session()
                                     try:
-                                        def _format_date(value):
-                                            if value is None:
-                                                return None
-                                            if hasattr(value, "strftime"):
-                                                return value.strftime("%Y-%m-%d")
-                                            value_str = str(value).strip()
-                                            if "-" in value_str and len(value_str) >= 10:
-                                                return value_str[:10]
-                                            if len(value_str) == 8 and value_str.isdigit():
-                                                return f"{value_str[0:4]}-{value_str[4:6]}-{value_str[6:8]}"
-                                            return value_str
-
-                                        def _format_time(value):
-                                            if value is None:
-                                                return None
-                                            if hasattr(value, "strftime"):
-                                                return value.strftime("%H:%M")
-                                            value_str = str(value).strip()
-                                            if ":" in value_str:
-                                                parts = value_str.split(":")
-                                                if len(parts) >= 2:
-                                                    hh = parts[0].zfill(2)
-                                                    mm = parts[1].zfill(2)
-                                                    return f"{hh}:{mm}"
-                                            if len(value_str) == 6 and value_str.isdigit():
-                                                return f"{value_str[0:2]}:{value_str[2:4]}"
-                                            if len(value_str) == 4 and value_str.isdigit():
-                                                return f"{value_str[0:2]}:{value_str[2:4]}"
-                                            return value_str
-
                                         for record in entries:
                                             patient_id = record.get("patient_id")
-                                            patient_name = record.get("patient_name")
                                             lgr.info(f"[{source_name}] Processing record for patient_id: {patient_id}")
                                             if not patient_id:
                                                 lgr.info(f"[{source_name}] Skipping record with missing patient_id")
                                                 continue
-
-                                            if patient_name:
-                                                existing_entry = (
-                                                    session.query(WorklistItem)
-                                                    .filter_by(patient_id=patient_id, patient_name=patient_name)
-                                                    .first()
-                                                )
-                                            else:
-                                                existing_entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
-
-                                            scheduled_start_date = _format_date(record.get("scheduled_start_date"))
-                                            scheduled_start_time = _format_time(record.get("scheduled_start_time"))
-
-                                            if existing_entry:
-                                                existing_entry.data_source = record.get("data_source") or source_name
-                                                existing_entry.scheduled_start_date = scheduled_start_date
-                                                existing_entry.scheduled_start_time = scheduled_start_time
-                                            else:
-                                                new_entry = WorklistItem(
-                                                    study_instance_uid=record.get("study_instance_uid") or generate_instance_uid(),
-                                                    patient_name=record.get("patient_name"),
-                                                    patient_id=patient_id,
-                                                    patient_birth_date=record.get("patient_birth_date"),
-                                                    patient_sex=record.get("patient_sex"),
-                                                    patient_weight_lb=record.get("patient_weight_lb"),
-                                                    accession_number=record.get("accession_number"),
-                                                    referring_physician_name=record.get("referring_physician_name"),
-                                                    modality=record.get("modality", "MR"),
-                                                    study_description=record.get("study_description"),
-                                                    scheduled_station_aetitle=record.get("scheduled_station_aetitle"),
-                                                    scheduled_start_date=scheduled_start_date,
-                                                    scheduled_start_time=scheduled_start_time,
-                                                    performing_physician=record.get("performing_physician"),
-                                                    procedure_description=record.get("procedure_description"),
-                                                    protocol_name=record.get("protocol_name") or protocol.get(site_id, "DEFAULT_PROTOCOL"),
-                                                    station_name=record.get("station_name"),
-                                                    hisris_coding_designator=record.get("hisris_coding_designator"),
-                                                    performed_procedure_step_status=record.get(
-                                                        "performed_procedure_step_status"
-                                                    ) or "SCHEDULED",
-                                                    data_source=record.get("data_source") or source_name
-                                                )
-                                                session.add(new_entry)
+                                            upsert_worklist_record(
+                                                session,
+                                                record,
+                                                source_name=source_name,
+                                                protocol=protocol,
+                                                site_id=site_id,
+                                            )
 
                                         session.commit()
                                         lgr.info(f"[{source_name}] Sync completed successfully")

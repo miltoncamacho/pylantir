@@ -146,6 +146,7 @@ class WorklistItemResponse(BaseModel):
     station_name: Optional[str]
     performed_procedure_step_status: Optional[str]
     data_source: Optional[str] = None
+    source_record_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -172,6 +173,7 @@ class WorklistItemCreate(BaseModel):
     station_name: Optional[str] = None
     performed_procedure_step_status: str = "SCHEDULED"
     data_source: Optional[str] = None
+    source_record_id: Optional[str] = None
 
     @validator('performed_procedure_step_status')
     def validate_status(cls, v):
@@ -199,6 +201,7 @@ class WorklistItemUpdate(BaseModel):
     station_name: Optional[str] = None
     performed_procedure_step_status: Optional[str] = None
     data_source: Optional[str] = None
+    source_record_id: Optional[str] = None
 
     @validator('performed_procedure_step_status')
     def validate_status(cls, v):

@@ -679,6 +679,9 @@ class CalendoPlugin(DataSourcePlugin):
 
         # Track data source
         entry["data_source"] = self.get_source_name()
+        # Stable upstream identity used by the database sync. Unlike patient
+        # identifiers, this remains unchanged when booking details are fixed.
+        entry["source_record_id"] = str(booking["id"])
 
         # Add booking hash for change detection
         booking_hash = self._compute_booking_hash(booking)

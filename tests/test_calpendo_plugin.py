@@ -402,6 +402,7 @@ class TestBookingTransformation:
         assert entry["patient_name"] == "John_Doe"
         assert "BRISKP" in entry["study_description"]
         assert entry["accession_number"] == "12345"
+        assert entry["source_record_id"] == "12345"
         assert entry["modality"] == "MR"
         assert entry["performed_procedure_step_status"] == "SCHEDULED"
         assert "scheduled_start_date" in entry
@@ -425,6 +426,7 @@ class TestBookingTransformation:
         # Should succeed with required fields
         assert entry is not None
         assert entry["patient_id"] == "SUB999"
+        assert entry["source_record_id"] == "99999"
 
     def test_missing_required_field_returns_none(self):
         """Booking missing required field should return None"""
