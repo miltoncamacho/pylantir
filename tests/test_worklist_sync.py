@@ -2,6 +2,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from pylantir.models import Base, WorklistItem
+from pylantir.data_sources.calpendo_plugin import CalendoPlugin
 from pylantir.worklist_sync import upsert_worklist_record
 
 
@@ -22,9 +23,20 @@ def test_source_record_id_updates_identifiers_without_duplicate():
     }
     corrected = dict(original, patient_id="RIGHT", patient_name="^Right_Name")
 
-    upsert_worklist_record(session, original, "calpendo_main")
+    plugin = CalendoPlugin()
+    upsert_worklist_record(
+        session,
+        original,
+        "calpendo_main",
+        match_candidates=plugin.get_record_match_candidates(original, "calpendo_main"),
+    )
     session.commit()
-    upsert_worklist_record(session, corrected, "calpendo_main")
+    upsert_worklist_record(
+        session,
+        corrected,
+        "calpendo_main",
+        match_candidates=plugin.get_record_match_candidates(corrected, "calpendo_main"),
+    )
     session.commit()
 
     rows = session.query(WorklistItem).all()
@@ -42,10 +54,22 @@ def test_same_record_id_is_scoped_by_configured_source():
         "patient_name": "^Patient",
     }
 
-    upsert_worklist_record(session, record, "calpendo_a")
+    plugin = CalendoPlugin()
+    upsert_worklist_record(
+        session,
+        record,
+        "calpendo_a",
+        match_candidates=plugin.get_record_match_candidates(record, "calpendo_a"),
+    )
     # Use a distinct patient for the second source so the legacy fallback
     # cannot intentionally claim the first source's row.
-    upsert_worklist_record(session, dict(record, patient_id="PATIENT2"), "calpendo_b")
+    second = dict(record, patient_id="PATIENT2")
+    upsert_worklist_record(
+        session,
+        second,
+        "calpendo_b",
+        match_candidates=plugin.get_record_match_candidates(second, "calpendo_b"),
+    )
     session.commit()
 
     assert session.query(WorklistItem).count() == 2
@@ -56,10 +80,13 @@ def test_legacy_match_acquires_source_record_id():
     session.add(WorklistItem(patient_id="P1", patient_name="^Person"))
     session.commit()
 
+    record = {"source_record_id": "55", "patient_id": "P1", "patient_name": "^Person"}
+    plugin = CalendoPlugin()
     upsert_worklist_record(
         session,
-        {"source_record_id": "55", "patient_id": "P1", "patient_name": "^Person"},
+        record,
         "calpendo_main",
+        match_candidates=plugin.get_record_match_candidates(record, "calpendo_main"),
     )
     session.commit()
 

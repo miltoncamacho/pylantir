@@ -114,7 +114,7 @@ def row_to_mwl_dataset(row: WorklistItem) -> Dataset:
 
 
 
-def handle_mwl_find(event):
+def handle_mwl_find(event, query_filters=None):
     """Handle MWL C-FIND: query the DB and return matching items."""
     query_ds = event.identifier
     lgr.info(f"Received MWL C-FIND query: {query_ds}")
@@ -135,6 +135,9 @@ def handle_mwl_find(event):
             WorklistItem.performed_procedure_step_status == "DISCONTINUED"
         )
     )
+
+    for query_filter in query_filters or []:
+        query = query_filter(query)
 
     results = query.all()
     session.close()
@@ -254,7 +257,13 @@ def handle_mpps_n_set(event):
 # --------------------------------------------------------------------
 # Start MWL + MPPS SCP Server
 # --------------------------------------------------------------------
-def run_mwl_server(host="0.0.0.0", port=4242, aetitle="MWL_SERVER", allowed_aets=""):
+def run_mwl_server(
+    host="0.0.0.0",
+    port=4242,
+    aetitle="MWL_SERVER",
+    allowed_aets="",
+    query_filters=None,
+):
     """Starts an MWL + MPPS SCP."""
     ae = AE(ae_title=aetitle)
 
@@ -268,7 +277,7 @@ def run_mwl_server(host="0.0.0.0", port=4242, aetitle="MWL_SERVER", allowed_aets
 
     # Register event handlers
     handlers = [
-        (evt.EVT_C_FIND, handle_mwl_find),
+        (evt.EVT_C_FIND, handle_mwl_find, [query_filters]),
         (evt.EVT_N_CREATE, handle_mpps_n_create),
         (evt.EVT_N_SET, handle_mpps_n_set),
     ]

@@ -762,3 +762,30 @@ class CalendoPlugin(DataSourcePlugin):
     def cleanup(self) -> None:
         """Perform cleanup after sync."""
         gc.collect()
+
+    def get_record_match_candidates(
+        self,
+        record: Dict,
+        configured_source_name: str,
+    ) -> List[Dict]:
+        """Match Calpendo rows by immutable booking ID, then legacy identity."""
+        candidates = []
+        if record.get("source_record_id") is not None:
+            candidates.append(
+                {
+                    "data_source": configured_source_name,
+                    "source_record_id": str(record["source_record_id"]),
+                }
+            )
+        legacy = {
+            "patient_id": record.get("patient_id"),
+            "data_source": configured_source_name,
+        }
+        if record.get("patient_name"):
+            legacy["patient_name"] = record["patient_name"]
+        candidates.append(legacy)
+        for historical_source in (self.get_source_name(), None):
+            historical = dict(legacy, data_source=historical_source)
+            if historical not in candidates:
+                candidates.append(historical)
+        return candidates

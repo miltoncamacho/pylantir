@@ -452,6 +452,10 @@ def main() -> None:
                                                 source_name=source_name,
                                                 protocol=protocol,
                                                 site_id=site_id,
+                                                match_candidates=plugin.get_record_match_candidates(
+                                                    record,
+                                                    source_name,
+                                                ),
                                             )
 
                                         session.commit()
@@ -493,11 +497,20 @@ def main() -> None:
                     executor.submit(sync_data_source_repeatedly, source)
 
                 # Start the MWL server in the main thread
+                query_filters = []
+                for source in enabled_sources:
+                    source_plugin = get_plugin(source.get("type", "unknown"))()
+                    query_filter = source_plugin.get_mwl_query_filter(
+                        source.get("name", "unknown")
+                    )
+                    if query_filter is not None:
+                        query_filters.append(query_filter)
                 run_mwl_server(
                     host=args.ip,
                     port=args.port,
                     aetitle=args.AEtitle,
                     allowed_aets=allowed_aet,
+                    query_filters=query_filters,
                 )
 
         else:
@@ -505,6 +518,7 @@ def main() -> None:
             lgr.warning("Using legacy configuration format. Consider migrating to data_sources format.")
 
             from ..redcap_to_db import sync_redcap_to_db_repeatedly
+            from ..data_sources.redcap_plugin import REDCapPlugin
 
             # Extract the database update interval (default to 60 seconds if missing)
             db_update_interval = config.get("db_update_interval", 60)
@@ -537,6 +551,12 @@ def main() -> None:
                     port=args.port,
                     aetitle=args.AEtitle,
                     allowed_aets=allowed_aet,
+                    query_filters=[
+                        REDCapPlugin().get_mwl_query_filter(
+                            "REDCap",
+                            include_unscoped=True,
+                        )
+                    ],
                 )
 
     if (args.command == "query-db"):

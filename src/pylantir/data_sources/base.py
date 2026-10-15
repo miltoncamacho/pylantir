@@ -26,7 +26,7 @@ USAGE:
 """
 
 from abc import ABC, abstractmethod
-from typing import Tuple, List, Dict
+from typing import Any, Callable, Tuple, List, Dict, Optional
 import logging
 
 lgr = logging.getLogger(__name__)
@@ -100,6 +100,25 @@ class DataSourcePlugin(ABC):
     def cleanup(self) -> None:
         """Perform cleanup after sync (close connections, free memory)."""
         pass
+
+    def get_record_match_candidates(
+        self,
+        record: Dict,
+        configured_source_name: str,
+    ) -> List[Dict[str, Any]]:
+        """Return ordered database identities used to find an existing row."""
+        identity = {"patient_id": record.get("patient_id")}
+        if record.get("patient_name"):
+            identity["patient_name"] = record["patient_name"]
+        return [identity]
+
+    def get_mwl_query_filter(
+        self,
+        configured_source_name: str,
+        include_unscoped: bool = False,
+    ) -> Optional[Callable]:
+        """Return an optional source-specific MWL query filter callback."""
+        return None
 
 
 class PluginError(Exception):

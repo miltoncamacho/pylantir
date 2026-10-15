@@ -2,7 +2,6 @@
 
 from typing import Any, Dict, Optional
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session as OrmSession
 
 from .models import WorklistItem
@@ -65,8 +64,9 @@ def upsert_worklist_record(
     source_name: str,
     protocol: Optional[Dict[str, str]] = None,
     site_id: Optional[str] = None,
+    match_candidates: Optional[list] = None,
 ) -> Optional[WorklistItem]:
-    """Insert or update one source record, preferring its stable source ID."""
+    """Insert or update one source record using plugin-provided identities."""
     patient_id = record.get("patient_id")
     if not patient_id:
         return None
@@ -75,25 +75,19 @@ def upsert_worklist_record(
     if source_record_id is not None:
         source_record_id = str(source_record_id)
 
-    existing = None
-    if source_record_id:
-        existing = (
-            session.query(WorklistItem)
-            .filter_by(data_source=source_name, source_record_id=source_record_id)
-            .first()
-        )
+    if match_candidates is None:
+        identity = {"patient_id": patient_id}
+        if record.get("patient_name"):
+            identity["patient_name"] = record["patient_name"]
+        match_candidates = [identity]
 
-    # Backward-compatible fallback also lets an unchanged legacy row acquire
-    # its source_record_id on the first sync after migration.
-    if existing is None:
-        patient_name = record.get("patient_name")
-        query = session.query(WorklistItem).filter_by(patient_id=patient_id)
-        query = query.filter(
-            or_(WorklistItem.data_source == source_name, WorklistItem.data_source.is_(None))
-        )
-        if patient_name:
-            query = query.filter_by(patient_name=patient_name)
-        existing = query.first()
+    existing = None
+    for candidate in match_candidates:
+        filters = dict(candidate)
+        if filters:
+            existing = session.query(WorklistItem).filter_by(**filters).first()
+        if existing is not None:
+            break
 
     is_new = existing is None
     item = existing or WorklistItem(study_instance_uid=generate_instance_uid())

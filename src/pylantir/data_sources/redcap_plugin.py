@@ -12,7 +12,7 @@ import logging
 import re
 from redcap.project import Project  # type: ignore
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import gc
 from typing import Dict, List, Tuple
 
@@ -43,6 +43,36 @@ class REDCapPlugin(DataSourcePlugin):
         self._api_token = None
         self._site_id = None
         self._protocol = None
+
+    def get_mwl_query_filter(
+        self,
+        configured_source_name: str,
+        include_unscoped: bool = False,
+    ):
+        """Limit this REDCap source's MWL responses to the current day."""
+        from sqlalchemy import or_
+
+        from ..models import WorklistItem
+
+        source_names = {configured_source_name, self.get_source_name()}
+
+        def filter_query(query, today=None):
+            current_day = today or date.today()
+            accepted_dates = (
+                current_day.strftime("%Y-%m-%d"),
+                current_day.strftime("%Y%m%d"),
+            )
+            non_redcap = WorklistItem.data_source.notin_(source_names)
+            if not include_unscoped:
+                non_redcap = or_(non_redcap, WorklistItem.data_source.is_(None))
+            return query.filter(
+                or_(
+                    non_redcap,
+                    WorklistItem.scheduled_start_date.in_(accepted_dates),
+                )
+            )
+
+        return filter_query
 
     def validate_config(self, config: Dict) -> Tuple[bool, str]:
         """Validate REDCap plugin configuration."""
