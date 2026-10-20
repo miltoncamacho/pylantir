@@ -51,3 +51,15 @@ def test_concussion_fetch_connects_with_concussion_credentials(monkeypatch):
     project_class.assert_called_once_with(
         "https://concussion.example/api/", "concussion-token"
     )
+
+
+def test_concussion_plugin_rejects_invalid_mwl_days_ahead(monkeypatch):
+    monkeypatch.setenv("REDCAP_API_URL_CONCUSSION", "https://concussion.example/api/")
+    monkeypatch.setenv("REDCAP_API_TOKEN_CONCUSSION", "concussion-token")
+
+    valid, error = ConcussionREDCapPlugin().validate_config(
+        {"site": "792", "protocol": "BRAIN_MRI_3T", "mwl_days_ahead": -1}
+    )
+
+    assert valid is False
+    assert error == "mwl_days_ahead must be an integer zero or greater"

@@ -116,6 +116,7 @@ class DataSourcePlugin(ABC):
         self,
         configured_source_name: str,
         include_unscoped: bool = False,
+        config: Optional[Dict] = None,
     ) -> Optional[Callable]:
         """Return an optional source-specific MWL query filter callback."""
         return None

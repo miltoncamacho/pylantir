@@ -62,3 +62,24 @@ def test_legacy_null_source_is_treated_as_redcap():
     query = query_filter(session.query(WorklistItem), today=date(2026, 10, 15))
 
     assert [row.patient_id for row in query.all()] == ["TODAY"]
+
+
+def test_redcap_mwl_days_ahead_one_includes_today_and_tomorrow():
+    session = make_session()
+    session.add_all(
+        [
+            WorklistItem(patient_id="TODAY", data_source="main_redcap", scheduled_start_date="2026-10-20"),
+            WorklistItem(patient_id="TOMORROW", data_source="main_redcap", scheduled_start_date="20261021"),
+            WorklistItem(patient_id="LATER", data_source="main_redcap", scheduled_start_date="2026-10-22"),
+            WorklistItem(patient_id="OLD", data_source="main_redcap", scheduled_start_date="2026-10-19"),
+        ]
+    )
+    session.commit()
+
+    query_filter = REDCapPlugin().get_mwl_query_filter(
+        "main_redcap",
+        config={"mwl_days_ahead": 1},
+    )
+    query = query_filter(session.query(WorklistItem), today=date(2026, 10, 20))
+
+    assert {row.patient_id for row in query.all()} == {"TODAY", "TOMORROW"}

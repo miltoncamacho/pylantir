@@ -51,20 +51,24 @@ class REDCapPlugin(DataSourcePlugin):
         self,
         configured_source_name: str,
         include_unscoped: bool = False,
+        config: Dict = None,
     ):
-        """Limit this REDCap source's MWL responses to the current day."""
+        """Limit this REDCap source's MWL responses to its configured date window."""
         from sqlalchemy import or_
 
         from ..models import WorklistItem
 
         source_names = {configured_source_name, self.get_source_name()}
+        days_ahead = self._get_mwl_days_ahead(config or {})
 
         def filter_query(query, today=None):
             current_day = today or date.today()
-            accepted_dates = (
-                current_day.strftime("%Y-%m-%d"),
-                current_day.strftime("%Y%m%d"),
-            )
+            accepted_dates = []
+            for offset in range(days_ahead + 1):
+                visible_day = current_day + timedelta(days=offset)
+                accepted_dates.extend(
+                    (visible_day.strftime("%Y-%m-%d"), visible_day.strftime("%Y%m%d"))
+                )
             non_redcap = WorklistItem.data_source.notin_(source_names)
             if not include_unscoped:
                 non_redcap = or_(non_redcap, WorklistItem.data_source.is_(None))
@@ -77,9 +81,22 @@ class REDCapPlugin(DataSourcePlugin):
 
         return filter_query
 
+    @staticmethod
+    def _get_mwl_days_ahead(config: Dict) -> int:
+        """Validate and return the number of future days visible over MWL."""
+        value = config.get("mwl_days_ahead", 0)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise PluginConfigError("mwl_days_ahead must be an integer zero or greater")
+        return value
+
     def validate_config(self, config: Dict) -> Tuple[bool, str]:
         """Validate REDCap plugin configuration."""
         site = config.get("site") or config.get("site_id")
+
+        try:
+            self._get_mwl_days_ahead(config)
+        except PluginConfigError as exc:
+            return (False, str(exc))
 
         # Check required config keys
         if not site:

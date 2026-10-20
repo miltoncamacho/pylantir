@@ -502,7 +502,8 @@ def main() -> None:
                 for source in enabled_sources:
                     source_plugin = get_plugin(source.get("type", "unknown"))()
                     query_filter = source_plugin.get_mwl_query_filter(
-                        source.get("name", "unknown")
+                        source.get("name", "unknown"),
+                        config=source.get("config", {}),
                     )
                     if query_filter is not None:
                         query_filters.append(query_filter)
