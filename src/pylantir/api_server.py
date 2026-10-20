@@ -186,6 +186,7 @@ class WorklistItemCreate(BaseModel):
 class WorklistItemUpdate(BaseModel):
     """Model for updating worklist items."""
     patient_name: Optional[str] = None
+    patient_id: Optional[str] = None
     patient_birth_date: Optional[str] = None
     patient_sex: Optional[str] = None
     patient_weight_lb: Optional[str] = None

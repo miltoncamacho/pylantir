@@ -319,6 +319,7 @@ class TestPylantirAPI:
         headers = {"Authorization": f"Bearer {token}"}
         
         update_data = {
+            "patient_id": "TEST002",
             "performed_procedure_step_status": "IN_PROGRESS",
             "modality": "MR"
         }
@@ -328,6 +329,7 @@ class TestPylantirAPI:
         assert response.status_code == 200
         
         updated_item = response.json()
+        assert updated_item["patient_id"] == "TEST002"
         assert updated_item["performed_procedure_step_status"] == "IN_PROGRESS"
     
     def test_delete_worklist_item(self, test_client, admin_user, sample_worklist_item):
