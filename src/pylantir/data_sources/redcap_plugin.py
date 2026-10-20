@@ -124,7 +124,7 @@ class REDCapPlugin(DataSourcePlugin):
             default_fields = [
                 "record_id", "study_id", "redcap_repeat_instrument",
                 "mri_instance", "mri_date", "mri_time", "family_id",
-                "youth_dob_y", "demo_sex"
+                "youth_dob_y", "demo_sex", "neuro_pcp"
             ]
             for field in default_fields:
                 if field not in redcap_fields:
@@ -289,7 +289,10 @@ class REDCapPlugin(DataSourcePlugin):
 
             # Construct DICOM identifiers
             patient_name = f"cpip-id-{study_id}^fa-{family_id}"
-            patient_id = f"sub_{study_id}_ses_{ses_id}_fam_{family_id}_site_{self._site_id}"
+            patient_study_id = study_id
+            if str(record.get("neuro_pcp", "")).strip() == "1":
+                patient_study_id = f"n_{study_id}"
+            patient_id = f"sub_{patient_study_id}_ses_{ses_id}_fam_{family_id}_site_{self._site_id}"
 
             # Build entry with mapped fields
             entry = {
