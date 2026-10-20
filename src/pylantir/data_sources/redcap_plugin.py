@@ -293,7 +293,8 @@ class REDCapPlugin(DataSourcePlugin):
             # Construct DICOM identifiers
             patient_name = f"cpip-id-{study_id}^fa-{family_id}"
             patient_study_id = study_id
-            if str(record.get("neuro_pcp", "")).strip() == "1":
+            neuro_pcp = str(record.get("neuro_pcp", "")).strip().lower()
+            if neuro_pcp in {"1", "true"} and not study_id.startswith("n_"):
                 patient_study_id = f"n_{study_id}"
             patient_id = f"sub_{patient_study_id}_ses_{ses_id}_fam_{family_id}_site_{self._site_id}"
 
