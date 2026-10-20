@@ -22,14 +22,14 @@ def test_neuro_pcp_prefixes_study_id_in_patient_id():
         {},
     )
 
-    assert entries[0]["patient_id"] == "sub_n_123_ses_2_fam_456_site_792"
+    assert entries[0]["patient_id"] == "sub_ng_123_ses_2_fam_456_site_792"
     assert entries[0]["patient_name"] == "cpip-id-123^fa-456"
 
 
 def test_true_neuro_pcp_does_not_duplicate_existing_study_prefix():
     entries = _plugin()._transform_records(
         [{
-            "study_id": "n_123",
+            "study_id": "ng_123",
             "family_id": "456",
             "mri_instance": "2",
             "neuro_pcp": True,
@@ -39,7 +39,7 @@ def test_true_neuro_pcp_does_not_duplicate_existing_study_prefix():
         {},
     )
 
-    assert entries[0]["patient_id"] == "sub_n_123_ses_2_fam_456_site_792"
+    assert entries[0]["patient_id"] == "sub_ng_123_ses_2_fam_456_site_792"
 
 
 def test_string_true_neuro_pcp_prefixes_study_id():
@@ -55,7 +55,7 @@ def test_string_true_neuro_pcp_prefixes_study_id():
         {},
     )
 
-    assert entries[0]["patient_id"] == "sub_n_123_ses_2_fam_456_site_792"
+    assert entries[0]["patient_id"] == "sub_ng_123_ses_2_fam_456_site_792"
 
 
 def test_non_neuro_pcp_uses_mri_instance_in_patient_id():
