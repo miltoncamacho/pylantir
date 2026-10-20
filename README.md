@@ -213,7 +213,7 @@ The new configuration format uses a `data_sources` array to define one or more d
 **Data Source Configuration Fields:**
 
 - **`name`**: Unique identifier for this data source (used in logs and database tracking)
-- **`type`**: Data source type (currently supports `"redcap"`; extensible for future sources)
+- **`type`**: Data source type (`"redcap"`, `"redcap_concussion"`, or `"calpendo"`)
 - **`enabled`**: Boolean to enable/disable this source without removing its configuration
 - **`sync_interval`**: How often to sync data (in seconds)
 - **`operation_interval`**: Time window when sync should occur (24-hour format)
@@ -224,6 +224,10 @@ The new configuration format uses a `data_sources` array to define one or more d
 - **`field_mapping`**: Maps source fields to DICOM worklist fields
 - **`window_mode`** (Calpendo optional): `rolling` (default) or `today`
 - **`daily_window`** (Calpendo optional): `{"start_time": [h, m], "end_time": [h, m]}`
+
+For the CPIP concussion study, set `type` to `"redcap_concussion"`. It uses
+the same configuration and field mapping as `"redcap"`, but reads credentials
+from `REDCAP_API_URL_CONCUSSION` and `REDCAP_API_TOKEN_CONCUSSION`.
 
 ### Multiple Data Sources Example
 

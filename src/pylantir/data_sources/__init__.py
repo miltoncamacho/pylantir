@@ -9,6 +9,7 @@ Version: 1.0.0
 
 from .base import DataSourcePlugin, PluginError, PluginConfigError, PluginFetchError
 from .redcap_plugin import REDCapPlugin
+from .redcap_concussion_plugin import ConcussionREDCapPlugin
 from .calpendo_plugin import CalendoPlugin
 from typing import Type, Dict, List
 import logging
@@ -18,6 +19,7 @@ lgr = logging.getLogger(__name__)
 # Plugin Registry - maps source type names to plugin classes
 PLUGIN_REGISTRY: Dict[str, Type[DataSourcePlugin]] = {
     "redcap": REDCapPlugin,
+    "redcap_concussion": ConcussionREDCapPlugin,
     "calpendo": CalendoPlugin,
 }
 

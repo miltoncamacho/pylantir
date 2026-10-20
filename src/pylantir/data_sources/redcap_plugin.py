@@ -37,6 +37,9 @@ class REDCapPlugin(DataSourcePlugin):
         - REDCAP_API_TOKEN: REDCap API access token
     """
 
+    API_URL_ENV = "REDCAP_API_URL"
+    API_TOKEN_ENV = "REDCAP_API_TOKEN"
+
     def __init__(self):
         super().__init__()
         self._api_url = None
@@ -90,14 +93,14 @@ class REDCapPlugin(DataSourcePlugin):
             return (False, "protocol must be a string or dictionary")
 
         # Check environment variables
-        self._api_url = os.getenv("REDCAP_API_URL")
-        self._api_token = os.getenv("REDCAP_API_TOKEN")
+        self._api_url = os.getenv(self.API_URL_ENV)
+        self._api_token = os.getenv(self.API_TOKEN_ENV)
 
         if not self._api_url:
-            return (False, "REDCAP_API_URL environment variable not set")
+            return (False, f"{self.API_URL_ENV} environment variable not set")
 
         if not self._api_token:
-            return (False, "REDCAP_API_TOKEN environment variable not set")
+            return (False, f"{self.API_TOKEN_ENV} environment variable not set")
 
         self._site_id = site
         self._protocol = config.get("protocol")
