@@ -789,3 +789,14 @@ class CalendoPlugin(DataSourcePlugin):
             if historical not in candidates:
                 candidates.append(historical)
         return candidates
+
+    def prepare_record_for_upsert(self, record: Dict, existing_record) -> Dict:
+        """Keep a scanner-completed booking completed when still approved."""
+        prepared = dict(record)
+        if (
+            existing_record is not None
+            and existing_record.performed_procedure_step_status == "COMPLETED"
+            and prepared.get("performed_procedure_step_status") == "SCHEDULED"
+        ):
+            prepared["performed_procedure_step_status"] = "COMPLETED"
+        return prepared

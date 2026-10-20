@@ -1,6 +1,6 @@
 """Database upsert helpers shared by data-source sync loops."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from sqlalchemy.orm import Session as OrmSession
 
@@ -65,6 +65,7 @@ def upsert_worklist_record(
     protocol: Optional[Dict[str, str]] = None,
     site_id: Optional[str] = None,
     match_candidates: Optional[list] = None,
+    record_preparer: Optional[Callable[[Dict[str, Any], Any], Dict[str, Any]]] = None,
 ) -> Optional[WorklistItem]:
     """Insert or update one source record using plugin-provided identities."""
     patient_id = record.get("patient_id")
@@ -92,14 +93,15 @@ def upsert_worklist_record(
     is_new = existing is None
     item = existing or WorklistItem(study_instance_uid=generate_instance_uid())
 
-    values = dict(record)
-    values["scheduled_start_date"] = _format_date(record.get("scheduled_start_date"))
-    values["scheduled_start_time"] = _format_time(record.get("scheduled_start_time"))
-    values["modality"] = record.get("modality") or "MR"
+    prepared_record = record_preparer(record, existing) if record_preparer else dict(record)
+    values = dict(prepared_record)
+    values["scheduled_start_date"] = _format_date(prepared_record.get("scheduled_start_date"))
+    values["scheduled_start_time"] = _format_time(prepared_record.get("scheduled_start_time"))
+    values["modality"] = prepared_record.get("modality") or "MR"
     values["performed_procedure_step_status"] = (
-        record.get("performed_procedure_step_status") or "SCHEDULED"
+        prepared_record.get("performed_procedure_step_status") or "SCHEDULED"
     )
-    if not record.get("protocol_name"):
+    if not prepared_record.get("protocol_name"):
         values["protocol_name"] = (protocol or {}).get(site_id, "DEFAULT_PROTOCOL")
 
     for field in WORKLIST_FIELDS:
@@ -108,8 +110,8 @@ def upsert_worklist_record(
         if is_new or field in values:
             setattr(item, field, values.get(field))
 
-    if record.get("study_instance_uid"):
-        item.study_instance_uid = record["study_instance_uid"]
+    if prepared_record.get("study_instance_uid"):
+        item.study_instance_uid = prepared_record["study_instance_uid"]
     item.data_source = source_name
     item.source_record_id = source_record_id
 

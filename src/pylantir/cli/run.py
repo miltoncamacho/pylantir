@@ -456,6 +456,7 @@ def main() -> None:
                                                     record,
                                                     source_name,
                                                 ),
+                                                record_preparer=plugin.prepare_record_for_upsert,
                                             )
 
                                         session.commit()

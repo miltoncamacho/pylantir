@@ -120,6 +120,10 @@ class DataSourcePlugin(ABC):
         """Return an optional source-specific MWL query filter callback."""
         return None
 
+    def prepare_record_for_upsert(self, record: Dict, existing_record: Any) -> Dict:
+        """Apply source-specific update policy before a row is written."""
+        return dict(record)
+
 
 class PluginError(Exception):
     """Base exception for plugin-related errors."""

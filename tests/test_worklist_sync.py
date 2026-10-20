@@ -93,3 +93,49 @@ def test_legacy_match_acquires_source_record_id():
     row = session.query(WorklistItem).one()
     assert row.data_source == "calpendo_main"
     assert row.source_record_id == "55"
+
+
+def test_calpendo_approved_booking_does_not_reset_completed_status():
+    session = make_session()
+    session.add(
+        WorklistItem(
+            patient_id="P1",
+            patient_name="^Person",
+            data_source="calpendo_main",
+            source_record_id="55",
+            performed_procedure_step_status="COMPLETED",
+        )
+    )
+    session.commit()
+
+    record = {
+        "source_record_id": "55",
+        "patient_id": "P1",
+        "patient_name": "^Person",
+        "performed_procedure_step_status": "SCHEDULED",
+        "scheduled_start_date": "2026-10-20",
+        "scheduled_start_time": "09:00",
+    }
+    plugin = CalendoPlugin()
+    upsert_worklist_record(
+        session,
+        record,
+        "calpendo_main",
+        match_candidates=plugin.get_record_match_candidates(record, "calpendo_main"),
+        record_preparer=plugin.prepare_record_for_upsert,
+    )
+    session.commit()
+
+    row = session.query(WorklistItem).one()
+    assert row.performed_procedure_step_status == "COMPLETED"
+    assert row.scheduled_start_date == "2026-10-20"
+
+
+def test_calpendo_scheduled_booking_remains_scheduled_when_not_completed():
+    plugin = CalendoPlugin()
+    record = {"performed_procedure_step_status": "SCHEDULED"}
+    existing = WorklistItem(performed_procedure_step_status="IN_PROGRESS")
+
+    prepared = plugin.prepare_record_for_upsert(record, existing)
+
+    assert prepared["performed_procedure_step_status"] == "SCHEDULED"
