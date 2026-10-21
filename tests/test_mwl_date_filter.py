@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from pylantir.models import Base, WorklistItem
 from pylantir.data_sources.redcap_plugin import REDCapPlugin
+from pylantir.data_sources.calpendo_plugin import CalendoPlugin
 
 
 def make_session():
@@ -83,3 +84,44 @@ def test_redcap_mwl_days_ahead_one_includes_today_and_tomorrow():
     query = query_filter(session.query(WorklistItem), today=date(2026, 10, 20))
 
     assert {row.patient_id for row in query.all()} == {"TODAY", "TOMORROW"}
+
+
+def test_calpendo_today_filter_only_limits_its_own_source():
+    session = make_session()
+    session.add_all(
+        [
+            WorklistItem(patient_id="CAL_OLD", data_source="calpendo_main", scheduled_start_date="2026-10-20"),
+            WorklistItem(patient_id="CAL_TODAY", data_source="calpendo_main", scheduled_start_date="20261021"),
+            WorklistItem(patient_id="CAL_TOMORROW", data_source="calpendo_main", scheduled_start_date="2026-10-22"),
+            WorklistItem(patient_id="OTHER_OLD", data_source="main_redcap", scheduled_start_date="2026-10-20"),
+        ]
+    )
+    session.commit()
+
+    query_filter = CalendoPlugin().get_mwl_query_filter(
+        "calpendo_main", config={"window_mode": "today"}
+    )
+    query = query_filter(session.query(WorklistItem), today=date(2026, 10, 21))
+
+    assert {row.patient_id for row in query.all()} == {"CAL_TODAY", "OTHER_OLD"}
+
+
+def test_calpendo_daily_window_filters_date_and_time():
+    session = make_session()
+    session.add_all(
+        [
+            WorklistItem(patient_id="EARLY", data_source="calpendo_main", scheduled_start_date="2026-10-21", scheduled_start_time="08:59"),
+            WorklistItem(patient_id="START", data_source="calpendo_main", scheduled_start_date="20261021", scheduled_start_time="0900"),
+            WorklistItem(patient_id="INSIDE", data_source="calpendo_main", scheduled_start_date="2026-10-21", scheduled_start_time="16:59"),
+            WorklistItem(patient_id="END", data_source="calpendo_main", scheduled_start_date="2026-10-21", scheduled_start_time="17:00"),
+        ]
+    )
+    session.commit()
+
+    query_filter = CalendoPlugin().get_mwl_query_filter(
+        "calpendo_main",
+        config={"window_mode": "today", "daily_window": {"start_time": [9, 0], "end_time": [17, 0]}},
+    )
+    query = query_filter(session.query(WorklistItem), today=date(2026, 10, 21))
+
+    assert {row.patient_id for row in query.all()} == {"START", "INSIDE"}

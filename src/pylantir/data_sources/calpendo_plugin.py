@@ -17,7 +17,7 @@ import re
 import hashlib
 import json
 from urllib.parse import quote
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import Dict, List, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
 import requests
@@ -64,6 +64,115 @@ class CalendoPlugin(DataSourcePlugin):
         self._timezone = None
         self._api_path = "/api"
 
+    @staticmethod
+    def _parse_daily_window(config: Dict) -> Optional[Tuple[time, time]]:
+        """Return validated daily start/end times, when configured."""
+        daily_window = config.get("daily_window")
+        if not daily_window:
+            return None
+        if not isinstance(daily_window, dict):
+            raise PluginConfigError("daily_window must be an object")
+
+        def parse_time(field: str) -> time:
+            value = daily_window.get(field)
+            if (
+                not isinstance(value, (list, tuple))
+                or len(value) != 2
+                or any(isinstance(part, bool) or not isinstance(part, int) for part in value)
+            ):
+                raise PluginConfigError(
+                    f"daily_window.{field} must be [hour, minute]"
+                )
+            try:
+                return time(value[0], value[1])
+            except ValueError as exc:
+                raise PluginConfigError(
+                    f"Invalid daily_window.{field}: {value}"
+                ) from exc
+
+        return parse_time("start_time"), parse_time("end_time")
+
+    def _calculate_fetch_window(
+        self, now: datetime, interval: float
+    ) -> Tuple[datetime, datetime]:
+        """Calculate the Calpendo API booking window in local time."""
+        daily_bounds = self._parse_daily_window(self._config or {})
+        if self._config.get("window_mode") == "today" or daily_bounds:
+            if daily_bounds:
+                start_clock, end_clock = daily_bounds
+            else:
+                start_clock, end_clock = time.min, time.min
+
+            start_time = self._timezone.localize(
+                datetime.combine(now.date(), start_clock)
+            )
+            end_time = self._timezone.localize(
+                datetime.combine(now.date(), end_clock)
+            )
+            # Midnight-to-midnight for plain `today`; an equal or earlier
+            # configured end denotes an overnight window ending tomorrow.
+            if end_time <= start_time:
+                end_time += timedelta(days=1)
+            return start_time, end_time
+
+        lookback_multiplier = self._config.get("lookback_multiplier", 2)
+        return (
+            now - timedelta(seconds=interval * lookback_multiplier),
+            now + timedelta(hours=24),
+        )
+
+    def get_mwl_query_filter(
+        self,
+        configured_source_name: str,
+        include_unscoped: bool = False,
+        config: Optional[Dict] = None,
+    ):
+        """Restrict this Calpendo source to its configured C-FIND window."""
+        from sqlalchemy import and_, func, or_
+
+        from ..models import WorklistItem
+
+        settings = config or {}
+        if settings.get("window_mode") != "today" and not settings.get("daily_window"):
+            return None
+
+        daily_bounds = self._parse_daily_window(settings)
+
+        def filter_query(query, today=None):
+            current_day = today or datetime.now(
+                pytz.timezone(settings.get("timezone", "America/Edmonton"))
+            ).date()
+            if isinstance(current_day, datetime):
+                current_day = current_day.date()
+
+            normalized_date = func.replace(WorklistItem.scheduled_start_date, "-", "")
+            normalized_time = func.replace(WorklistItem.scheduled_start_time, ":", "")
+            source_match = WorklistItem.data_source == configured_source_name
+
+            if daily_bounds:
+                start_clock, end_clock = daily_bounds
+                start_value = start_clock.strftime("%H%M")
+                end_value = end_clock.strftime("%H%M")
+                today_value = current_day.strftime("%Y%m%d")
+                if end_clock > start_clock:
+                    in_window = and_(
+                        normalized_date == today_value,
+                        normalized_time >= start_value,
+                        normalized_time < end_value,
+                    )
+                else:
+                    tomorrow_value = (current_day + timedelta(days=1)).strftime("%Y%m%d")
+                    in_window = or_(
+                        and_(normalized_date == today_value, normalized_time >= start_value),
+                        and_(normalized_date == tomorrow_value, normalized_time < end_value),
+                    )
+            else:
+                in_window = normalized_date == current_day.strftime("%Y%m%d")
+
+            return query.filter(or_(~source_match, and_(source_match, in_window)))
+
+        return filter_query
+
     def validate_config(self, config: Dict) -> Tuple[bool, str]:
         """
         Validate Calpendo plugin configuration.
@@ -97,6 +206,14 @@ class CalendoPlugin(DataSourcePlugin):
         self._api_path = "/" + config.get("api_path", "/api").strip("/")
 
         # Validate optional fields
+        window_mode = config.get("window_mode", "rolling")
+        if window_mode not in ("rolling", "today"):
+            return (False, "window_mode must be 'rolling' or 'today'")
+        try:
+            self._parse_daily_window(config)
+        except PluginConfigError as exc:
+            return (False, str(exc))
+
         lookback_multiplier = config.get("lookback_multiplier", 2)
         if not isinstance(lookback_multiplier, (int, float)) or lookback_multiplier <= 0:
             return (False, "lookback_multiplier must be a positive number")
@@ -155,25 +272,15 @@ class CalendoPlugin(DataSourcePlugin):
                     list(field_mapping.keys()),
                 )
 
-            # Calculate rolling window
+            # Calculate the configured booking window.
             now = datetime.now(self._timezone)
-            window_mode = self._config.get("window_mode")
-            use_daily_window = self._config.get("daily_window", False)
-
-            if window_mode == "today" or use_daily_window:
-                start_time = self._timezone.localize(
-                    datetime(now.year, now.month, now.day)
-                )
-                end_time = start_time + timedelta(days=1)
+            start_time, end_time = self._calculate_fetch_window(now, interval)
+            if self._config.get("window_mode") == "today" or self._config.get("daily_window"):
                 self.logger.debug(
                     "Using daily window from %s to %s",
                     start_time.isoformat(),
                     end_time.isoformat(),
                 )
-            else:
-                lookback_multiplier = self._config.get("lookback_multiplier", 2)
-                start_time = now - timedelta(seconds=interval * lookback_multiplier)
-                end_time = now + timedelta(hours=24)
 
             self.logger.debug(
                 f"Fetching Calpendo bookings from {start_time.isoformat()} "

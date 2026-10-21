@@ -280,6 +280,31 @@ class TestTimezoneConversion:
         assert utc_before.hour == 8  # 1 AM MST = 8 AM UTC
         assert utc_after.hour == 9   # 3 AM MDT = 9 AM UTC
 
+    def test_configured_daily_window_times_are_used(self):
+        self.plugin._config["window_mode"] = "today"
+        self.plugin._config["daily_window"] = {
+            "start_time": [9, 15],
+            "end_time": [17, 45],
+        }
+        now = self.plugin._timezone.localize(datetime(2026, 10, 21, 12, 0))
+
+        start, end = self.plugin._calculate_fetch_window(now, interval=60)
+
+        assert start == self.plugin._timezone.localize(datetime(2026, 10, 21, 9, 15))
+        assert end == self.plugin._timezone.localize(datetime(2026, 10, 21, 17, 45))
+
+    def test_overnight_daily_window_ends_next_day(self):
+        self.plugin._config["daily_window"] = {
+            "start_time": [22, 0],
+            "end_time": [2, 0],
+        }
+        now = self.plugin._timezone.localize(datetime(2026, 10, 21, 12, 0))
+
+        start, end = self.plugin._calculate_fetch_window(now, interval=60)
+
+        assert start == self.plugin._timezone.localize(datetime(2026, 10, 21, 22, 0))
+        assert end == self.plugin._timezone.localize(datetime(2026, 10, 22, 2, 0))
+
 
 class TestStatusAndResourceMapping:
     """Test status and resource mapping (T018)"""

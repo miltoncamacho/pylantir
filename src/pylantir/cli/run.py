@@ -501,9 +501,14 @@ def main() -> None:
                 query_filters = []
                 for source in enabled_sources:
                     source_plugin = get_plugin(source.get("type", "unknown"))()
+                    filter_config = dict(source.get("config", {}))
+                    if "window_mode" in source:
+                        filter_config["window_mode"] = source["window_mode"]
+                    if "daily_window" in source:
+                        filter_config["daily_window"] = source["daily_window"]
                     query_filter = source_plugin.get_mwl_query_filter(
                         source.get("name", "unknown"),
-                        config=source.get("config", {}),
+                        config=filter_config,
                     )
                     if query_filter is not None:
                         query_filters.append(query_filter)
