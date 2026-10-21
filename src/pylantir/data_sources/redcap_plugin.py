@@ -308,11 +308,11 @@ class REDCapPlugin(DataSourcePlugin):
                 continue
 
             # Construct DICOM identifiers
-            patient_name = f"cpip-id-{study_id}^fa-{family_id}"
             patient_study_id = study_id
             neuro_pcp = str(record.get("neuro_pcp", "")).strip().lower()
             if neuro_pcp in {"1", "true"} and not study_id.startswith("ng_"):
                 patient_study_id = f"ng_{study_id}"
+            patient_name = f"cpip-id-{patient_study_id}^fa-{family_id}"
             patient_id = f"sub_{patient_study_id}_ses_{ses_id}_fam_{family_id}_site_{self._site_id}"
 
             # Build entry with mapped fields
