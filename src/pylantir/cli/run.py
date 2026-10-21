@@ -419,6 +419,8 @@ def main() -> None:
                                 logging.info(f"[{source_name}] First sync of the day at {now_time}")
 
                             # Fetch entries using plugin
+                            entries = None
+                            session = None
                             try:
                                 fetch_interval = extended_interval if is_first_run else interval_sync
                                 field_mapping = source_config.get("field_mapping", {})
@@ -464,10 +466,6 @@ def main() -> None:
                                     except Exception as e:
                                         session.rollback()
                                         lgr.error(f"[{source_name}] Database error: {e}")
-                                    finally:
-                                        session.expunge_all()
-                                        session.close()
-                                        cleanup_memory_and_connections()
 
                                 last_sync_date = today_date
 
@@ -475,6 +473,21 @@ def main() -> None:
                                 lgr.error(f"[{source_name}] Sync error: {e}")
                                 import traceback
                                 traceback.print_exc()
+                            finally:
+                                if session is not None:
+                                    session.expunge_all()
+                                    session.close()
+                                if entries is not None:
+                                    entries.clear()
+                                try:
+                                    plugin.cleanup()
+                                except Exception as cleanup_exc:
+                                    lgr.warning(
+                                        "[%s] Plugin cleanup failed: %s",
+                                        source_name,
+                                        cleanup_exc,
+                                    )
+                                cleanup_memory_and_connections()
 
                         # Wait before next iteration
                         STOP_EVENT.wait(sync_interval)

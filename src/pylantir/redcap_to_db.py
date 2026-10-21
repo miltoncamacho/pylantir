@@ -166,8 +166,11 @@ def get_memory_usage():
 
 def cleanup_memory_and_connections():
     """
-    Comprehensive cleanup function to manage memory and database connections.
-    This function should be called after each synchronization cycle.
+    Release unreachable Python objects after a synchronization cycle.
+
+    Database sessions are owned and closed by their callers. Disposing the
+    shared engine pool here races with MWL/API threads and does not release the
+    Python objects responsible for process RSS growth.
     """
     lgr.debug("Starting memory and connection cleanup...")
 
@@ -175,26 +178,7 @@ def cleanup_memory_and_connections():
     memory_before = get_memory_usage()
 
     try:
-        # 1. Clear pandas cache and temporary objects
-        # Force garbage collection of pandas objects
-        gc.collect()
-
-        # 2. Close any idle database connections in the pool
-        if hasattr(engine, 'pool'):
-            # Dispose of the connection pool to free up connections
-            lgr.debug("Disposing database connection pool")
-            engine.pool.dispose()
-
-        # 3. Force Python garbage collection targeting all generations
-        # Target generation 2 (oldest) first to catch long-lived objects
-        collected = gc.collect(generation=2)  # Oldest generation
-        collected += gc.collect(generation=1)  # Middle generation
-        collected += gc.collect(generation=0)  # Youngest generation
-
-        # 4. Clear any cached SQLAlchemy metadata
-        if hasattr(engine, 'pool'):
-            # Recreate the pool with fresh connections
-            engine.pool.recreate()
+        collected = gc.collect()
 
         # Get memory usage after cleanup
         memory_after = get_memory_usage()
