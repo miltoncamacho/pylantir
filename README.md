@@ -363,13 +363,17 @@ export CALPENDO_PASSWORD=<your_calpendo_password>
         "group": 1
       }
     },
-    "accession_number": "id",
-    "study_instance_uid": "id"
+    "accession_number": "id"
   }
 }
 ```
 
 **Calpendo Configuration Fields:**
+
+Bookings are matched during sync by Calpendo booking ID (`source_record_id`)
+and source name. A StudyInstanceUID is generated when a new worklist entry is
+created and retained on subsequent syncs. Legacy `study_instance_uid` field
+mappings are ignored; existing stored UIDs are preserved.
 
 - **`base_url`**: Calpendo server URL (e.g., `https://your-institution.calpendo.com`)
 - **`api_path`** (optional, default: `"/api"`): Calpendo 11+ API root. Use `"/webdav"` only for a legacy server.

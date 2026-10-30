@@ -530,3 +530,13 @@ class TestChangeDetection:
         notes = json.loads(entry["notes"])
         assert "booking_hash" in notes
         assert len(notes["booking_hash"]) == 64  # SHA256 hex length
+
+    def test_legacy_study_uid_mapping_is_ignored(self):
+        booking = FIXTURES["booking_detail_12345"]
+        entry = self.plugin._transform_booking_to_entry(
+            booking,
+            {"patient_id": "title", "study_instance_uid": "id"},
+        )
+
+        assert entry["source_record_id"] == str(booking["id"])
+        assert "study_instance_uid" not in entry

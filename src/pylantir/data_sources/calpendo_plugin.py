@@ -660,6 +660,10 @@ class CalendoPlugin(DataSourcePlugin):
 
         # Apply field mappings
         for target_field, mapping_config in field_mapping.items():
+            # Study UIDs belong to the local worklist entry. Older configs mapped
+            # them to booking IDs; retain booking identity in source_record_id.
+            if target_field == "study_instance_uid":
+                continue
             source_value = None
 
             if isinstance(mapping_config, dict):

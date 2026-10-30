@@ -31,6 +31,9 @@ def test_source_record_id_updates_identifiers_without_duplicate():
         match_candidates=plugin.get_record_match_candidates(original, "calpendo_main"),
     )
     session.commit()
+    original_uid = session.query(WorklistItem).one().study_instance_uid
+    assert original_uid.startswith("1.2.840.10008.3.1.2.3.4.")
+    assert original_uid != original["source_record_id"]
     upsert_worklist_record(
         session,
         corrected,
@@ -44,6 +47,7 @@ def test_source_record_id_updates_identifiers_without_duplicate():
     assert rows[0].patient_id == "RIGHT"
     assert rows[0].patient_name == "^Right_Name"
     assert rows[0].source_record_id == "12345"
+    assert rows[0].study_instance_uid == original_uid
 
 
 def test_same_record_id_is_scoped_by_configured_source():
