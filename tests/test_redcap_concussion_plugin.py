@@ -63,3 +63,23 @@ def test_concussion_plugin_rejects_invalid_mwl_days_ahead(monkeypatch):
 
     assert valid is False
     assert error == "mwl_days_ahead must be an integer zero or greater"
+
+
+def test_concussion_plugin_normalizes_underscore_identifier_prefixes():
+    plugin = ConcussionREDCapPlugin()
+    plugin._site_id = "792"
+
+    entries = plugin._transform_records(
+        [{
+            "study_id": "sub_2949",
+            "family_id": "fam_6450",
+            "mri_instance": "c_1a",
+            "neuro_pcp": "0",
+            "mri_date": "2026-11-03",
+            "mri_time": "17:15",
+        }],
+        {},
+    )
+
+    assert entries[0]["patient_name"] == "cpip-id-2949^fa-6450"
+    assert entries[0]["patient_id"] == "sub_2949_ses_c_1a_fam_6450_site_792"
