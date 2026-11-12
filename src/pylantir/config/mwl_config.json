@@ -35,5 +35,25 @@
     },
     "protocol": {
         "792": "BRAIN_MRI_3T"
-    }
+    },
+    "api": {
+        "cors_allowed_origins": [
+            "http://localhost:3000",
+            "http://localhost:8080",
+            "https://your-frontend-domain.com"
+        ],
+        "cors_allow_credentials": true,
+        "cors_allow_methods": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "OPTIONS"
+        ],
+        "cors_allow_headers": [
+            "*"
+        ]
+    },
+    "_comment_data_sources": "Optional: Configure data sources to fetch worklist entries from external systems. See calpendo_config_example.json for detailed configuration.",
+    "data_sources": []
 }

@@ -1,0 +1,108 @@
+{
+    "db_path": "/path/to/worklist.db",
+    "db_echo": "0",
+    "db_update_interval": 60,
+    "allowed_aet": [],
+    "operation_interval": {
+        "start_time": [
+            0,
+            0
+        ],
+        "end_time": [
+            23,
+            59
+        ]
+    },
+    "mri_visit_session_mapping": {
+        "t1_arm_1": "1",
+        "t2_arm_1": "2",
+        "t3_arm_1": "3"
+    },
+    "site": "792",
+    "redcap2wl": {
+        "study_id": "study_id",
+        "family_id": "family_id",
+        "youth_dob_y": "youth_dob_y",
+        "t1_date": "t1_date",
+        "demo_sex": "demo_sex",
+        "scheduled_date": "scheduled_start_date",
+        "scheduled_time": "scheduled_start_time",
+        "mri_wt_lbs": "patient_weight_lb",
+        "referring_physician": "referring_physician_name",
+        "performing_physician": "performing_physician",
+        "station_name": "station_name",
+        "status": "performed_procedure_step_status"
+    },
+    "protocol": {
+        "792": "BRAIN_MRI_3T"
+    },
+    "api": {
+        "_comment": "CORS Configuration Examples",
+        "_development": {
+            "cors_allowed_origins": [
+                "http://localhost:3000",
+                "http://localhost:8080"
+            ],
+            "cors_allow_credentials": true,
+            "cors_allow_methods": [
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE",
+                "OPTIONS"
+            ],
+            "cors_allow_headers": [
+                "*"
+            ]
+        },
+        "_production_single_domain": {
+            "cors_allowed_origins": [
+                "https://my-app.company.com"
+            ],
+            "cors_allow_credentials": true,
+            "cors_allow_methods": [
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE"
+            ],
+            "cors_allow_headers": [
+                "Content-Type",
+                "Authorization"
+            ]
+        },
+        "_production_multiple_domains": {
+            "cors_allowed_origins": [
+                "https://app.company.com",
+                "https://admin.company.com",
+                "https://mobile.company.com"
+            ],
+            "cors_allow_credentials": true,
+            "cors_allow_methods": [
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE"
+            ],
+            "cors_allow_headers": [
+                "Content-Type",
+                "Authorization",
+                "X-API-Key"
+            ]
+        },
+        "cors_allowed_origins": [
+            "http://localhost:3000"
+        ],
+        "cors_allow_credentials": true,
+        "cors_allow_methods": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE",
+            "OPTIONS"
+        ],
+        "cors_allow_headers": [
+            "*"
+        ]
+    }
+}
