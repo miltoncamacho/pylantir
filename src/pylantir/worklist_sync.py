@@ -65,7 +65,7 @@ def upsert_worklist_record(
     protocol: Optional[Dict[str, str]] = None,
     site_id: Optional[str] = None,
     match_candidates: Optional[list] = None,
-    record_preparer: Optional[Callable[[Dict[str, Any], Any], Dict[str, Any]]] = None,
+    record_preparer: Optional[Callable[[Dict[str, Any], Any], Optional[Dict[str, Any]]]] = None,
 ) -> Optional[WorklistItem]:
     """Insert or update one source record using plugin-provided identities."""
     patient_id = record.get("patient_id")
@@ -94,6 +94,8 @@ def upsert_worklist_record(
     item = existing or WorklistItem(study_instance_uid=generate_instance_uid())
 
     prepared_record = record_preparer(record, existing) if record_preparer else dict(record)
+    if prepared_record is None:
+        return existing
     values = dict(prepared_record)
     values["scheduled_start_date"] = _format_date(prepared_record.get("scheduled_start_date"))
     values["scheduled_start_time"] = _format_time(prepared_record.get("scheduled_start_time"))

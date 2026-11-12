@@ -432,6 +432,19 @@ class REDCapPlugin(DataSourcePlugin):
         """Return source type identifier."""
         return "REDCap"
 
+    def prepare_record_for_upsert(self, record: Dict, existing_record):
+        """Keep completed scans unchanged when REDCap exports them again."""
+        if (
+            existing_record is not None
+            and existing_record.performed_procedure_step_status == "COMPLETED"
+        ):
+            self.logger.info(
+                "Skipping REDCap update for completed scan: %s",
+                existing_record.patient_id,
+            )
+            return None
+        return dict(record)
+
     def supports_incremental_sync(self) -> bool:
         """REDCap supports incremental sync via date filtering."""
         return True

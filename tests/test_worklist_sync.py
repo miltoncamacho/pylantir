@@ -1,8 +1,11 @@
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from pylantir.models import Base, WorklistItem
 from pylantir.data_sources.calpendo_plugin import CalendoPlugin
+from pylantir.data_sources.redcap_plugin import REDCapPlugin
+from pylantir.data_sources.redcap_concussion_plugin import ConcussionREDCapPlugin
 from pylantir.worklist_sync import upsert_worklist_record
 
 
@@ -143,3 +146,66 @@ def test_calpendo_scheduled_booking_remains_scheduled_when_not_completed():
     prepared = plugin.prepare_record_for_upsert(record, existing)
 
     assert prepared["performed_procedure_step_status"] == "SCHEDULED"
+
+
+@pytest.mark.parametrize("plugin_class", [REDCapPlugin, ConcussionREDCapPlugin])
+@pytest.mark.parametrize("incoming_status", ["SCHEDULED", "COMPLETED"])
+def test_redcap_completed_scan_is_unchanged(plugin_class, incoming_status):
+    session = make_session()
+    original = WorklistItem(
+        patient_id="sub_2368_ses_2a_fam_7324_site_792",
+        patient_name="cpip-id-2368^fa-7324",
+        study_instance_uid="1.2.3.4.5",
+        scheduled_start_date="2026-10-22",
+        scheduled_start_time="09:00",
+        patient_weight_lb="100",
+        protocol_name="CPIP",
+        performed_procedure_step_status="COMPLETED",
+        data_source="main_redcap",
+    )
+    session.add(original)
+    session.commit()
+    before = {column.name: getattr(original, column.name) for column in WorklistItem.__table__.columns}
+    record = {
+        "patient_id": original.patient_id,
+        "patient_name": original.patient_name,
+        "study_instance_uid": "1.2.3.4.6",
+        "scheduled_start_date": "2026-11-12",
+        "scheduled_start_time": "09:30",
+        "patient_weight_lb": "47.0",
+        "performed_procedure_step_status": incoming_status,
+    }
+    plugin = plugin_class()
+    for _ in range(2):
+        upsert_worklist_record(
+            session, record, "main_redcap",
+            match_candidates=plugin.get_record_match_candidates(record, "main_redcap"),
+            record_preparer=plugin.prepare_record_for_upsert,
+        )
+        session.commit()
+        session.expire_all()
+        row = session.query(WorklistItem).one()
+        assert {column.name: getattr(row, column.name) for column in WorklistItem.__table__.columns} == before
+    session.close()
+
+
+@pytest.mark.parametrize("plugin_class", [REDCapPlugin, ConcussionREDCapPlugin])
+def test_redcap_new_and_scheduled_scans_still_sync(plugin_class):
+    session = make_session()
+    plugin = plugin_class()
+    record = {
+        "patient_id": "P1", "patient_name": "^Person",
+        "scheduled_start_date": "2026-11-12", "scheduled_start_time": "09:00",
+        "performed_procedure_step_status": "SCHEDULED",
+    }
+    for time in ["09:00", "09:30"]:
+        record["scheduled_start_time"] = time
+        upsert_worklist_record(
+            session, record, "main_redcap",
+            record_preparer=plugin.prepare_record_for_upsert,
+        )
+        session.commit()
+        row = session.query(WorklistItem).one()
+        assert row.scheduled_start_time == time
+        assert row.performed_procedure_step_status == "SCHEDULED"
+    session.close()
