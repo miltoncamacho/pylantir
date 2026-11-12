@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - "v*"  # Only run on version tags like v1.2.3
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   build-and-publish:
@@ -12,6 +17,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -26,7 +33,42 @@ jobs:
       - name: Build package
         run: python -m build
 
+      - name: Check distributions
+        run: python -m twine check dist/*
+
+      - name: Verify release version matches tag
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import tarfile
+          import zipfile
+          from email.parser import BytesParser
+          from pathlib import Path
+          from packaging.version import Version
+
+          expected = Version(os.environ["RELEASE_TAG"].removeprefix("v"))
+          for artifact in Path("dist").iterdir():
+              if artifact.suffix == ".whl":
+                  with zipfile.ZipFile(artifact) as archive:
+                      metadata = next(n for n in archive.namelist() if n.endswith(".dist-info/METADATA"))
+                      payload = archive.read(metadata)
+              elif artifact.name.endswith(".tar.gz"):
+                  with tarfile.open(artifact) as archive:
+                      metadata = next(m for m in archive.getmembers() if m.name.count("/") == 1 and m.name.endswith("/PKG-INFO"))
+                      payload = archive.extractfile(metadata).read()
+              else:
+                  raise SystemExit(f"Unexpected artifact: {artifact}")
+              actual = Version(BytesParser().parsebytes(payload)["Version"])
+              if actual != expected:
+                  raise SystemExit(f"{artifact}: version {actual} does not match tag {expected}")
+              print(f"{artifact}: version {actual} matches tag")
+          PY
+
       - name: Publish to PyPI
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
