@@ -16,6 +16,8 @@
 
 import os
 import logging
+import threading
+import time
 from pydicom.dataset import Dataset
 from pynetdicom import AE, evt
 from pynetdicom.sop_class import (
@@ -39,6 +41,45 @@ lgr = logging.getLogger(__name__)
 
 # Track MPPS instances in memory (for reference)
 managed_instances = {}
+managed_instance_timestamps = {}
+managed_instances_lock = threading.Lock()
+MPPS_INSTANCE_TTL_SECONDS = int(os.getenv("MPPS_INSTANCE_TTL_SECONDS", "86400"))
+MPPS_MAX_MANAGED_INSTANCES = int(os.getenv("MPPS_MAX_MANAGED_INSTANCES", "1000"))
+
+
+def prune_managed_instances(now=None):
+    """Expire abandoned MPPS state and enforce a hard memory bound."""
+    current_time = time.monotonic() if now is None else now
+    with managed_instances_lock:
+        expired = [
+            sop_uid
+            for sop_uid, created_at in managed_instance_timestamps.items()
+            if current_time - created_at >= MPPS_INSTANCE_TTL_SECONDS
+        ]
+        for sop_uid in expired:
+            managed_instances.pop(sop_uid, None)
+            managed_instance_timestamps.pop(sop_uid, None)
+
+        overflow = max(0, len(managed_instances) - MPPS_MAX_MANAGED_INSTANCES)
+        if overflow:
+            oldest = sorted(
+                managed_instance_timestamps,
+                key=managed_instance_timestamps.get,
+            )[:overflow]
+            for sop_uid in oldest:
+                managed_instances.pop(sop_uid, None)
+                managed_instance_timestamps.pop(sop_uid, None)
+
+        remaining = len(managed_instances)
+
+    removed = len(expired) + overflow
+    if removed:
+        lgr.info(
+            "Pruned %s MPPS instance(s); %s remain in memory",
+            removed,
+            remaining,
+        )
+    return removed
 
 def row_to_mwl_dataset(row: WorklistItem) -> Dataset:
     """Build MWL item (C-FIND response dataset) from a DB row."""
@@ -114,7 +155,7 @@ def row_to_mwl_dataset(row: WorklistItem) -> Dataset:
 
 
 
-def handle_mwl_find(event):
+def handle_mwl_find(event, query_filters=None):
     """Handle MWL C-FIND: query the DB and return matching items."""
     query_ds = event.identifier
     lgr.info(f"Received MWL C-FIND query: {query_ds}")
@@ -136,16 +177,21 @@ def handle_mwl_find(event):
         )
     )
 
-    results = query.all()
-    session.close()
+    for query_filter in query_filters or []:
+        query = query_filter(query)
 
-    lgr.info(f"Found {len(results)} matching worklist entries.")
+    result_count = 0
+    try:
+        # Avoid retaining every matching ORM row while a modality slowly
+        # consumes the response stream.
+        for row in query.execution_options(stream_results=True).yield_per(100):
+            result_count += 1
+            yield (0xFF00, row_to_mwl_dataset(row))
 
-    for row in results:
-        ds = row_to_mwl_dataset(row)
-        yield (0xFF00, ds)
-
-    yield (0x0000, None)
+        lgr.info("Found %s matching worklist entries.", result_count)
+        yield (0x0000, None)
+    finally:
+        session.close()
 
 
 # --------------------------------------------------------------------
@@ -161,14 +207,17 @@ def handle_mpps_n_create(event):
     ds.SOPInstanceUID = req.AffectedSOPInstanceUID or "UNKNOWN_UID"
     ds.update(attr_list)
 
-    # Store MPPS instance
-    managed_instances[ds.SOPInstanceUID] = ds
-
     # Validation logic (log warnings, don't return errors to MRI scanner)
     if not req.AffectedSOPInstanceUID:
         lgr.warning("MPPS N-CREATE: Missing Affected SOP Instance UID")
-    elif req.AffectedSOPInstanceUID in managed_instances:
+    prune_managed_instances()
+    with managed_instances_lock:
+        is_duplicate = ds.SOPInstanceUID in managed_instances
+        managed_instances[ds.SOPInstanceUID] = ds
+        managed_instance_timestamps[ds.SOPInstanceUID] = time.monotonic()
+    if is_duplicate:
         lgr.warning("MPPS N-CREATE: Duplicate SOP Instance UID received")
+    prune_managed_instances()
 
     status = attr_list.get("PerformedProcedureStepStatus", "").upper()
     if not status:
@@ -178,17 +227,25 @@ def handle_mpps_n_create(event):
 
     # Update database: Set status to IN_PROGRESS
     patient_id = ds.get("PatientID", None)
+    patient_name = ds.get("PatientName", None)
     session = Session()
-    if patient_id:
-        entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
-        if entry:
-            entry.performed_procedure_step_status = "IN_PROGRESS"
-            session.commit()
-            lgr.info(f"DB updated: PatientID {patient_id} set to IN_PROGRESS")
-    else:
-        lgr.warning("MPPS N-CREATE: No PatientID found in attributes. DB update skipped.")
-
-    session.close()
+    try:
+        if patient_id:
+            if patient_name:
+                entry = session.query(WorklistItem).filter_by(
+                    patient_id=patient_id,
+                    patient_name=str(patient_name),
+                ).first()
+            else:
+                entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
+            if entry:
+                entry.performed_procedure_step_status = "IN_PROGRESS"
+                session.commit()
+                lgr.info(f"DB updated: PatientID {patient_id} set to IN_PROGRESS")
+        else:
+            lgr.warning("MPPS N-CREATE: No PatientID found in attributes. DB update skipped.")
+    finally:
+        session.close()
     lgr.info(f"MPPS N-CREATE processed: {ds.SOPInstanceUID}")
 
     return 0x0000, ds  # Always return Success
@@ -198,39 +255,54 @@ def handle_mpps_n_set(event):
     req = event.request
     sop_uid = req.RequestedSOPInstanceUID
 
-    if sop_uid not in managed_instances:
+    prune_managed_instances()
+    with managed_instances_lock:
+        ds = managed_instances.get(sop_uid)
+    if ds is None:
         lgr.warning(f"MPPS N-SET: Unknown SOP Instance UID {sop_uid}")
         ds = Dataset()
         ds.SOPInstanceUID = sop_uid
         return 0x0000, ds  # Still return success
-
-    ds = managed_instances[sop_uid]
     mod_list = event.attribute_list
     ds.update(mod_list)
 
     new_status = ds.get("PerformedProcedureStepStatus", None)
     patient_id = ds.get("PatientID", None)
+    patient_name = ds.get("PatientName", None)
 
+    normalized_status = str(new_status).upper() if new_status else ""
     session = Session()
-    if patient_id and new_status:
-        entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
-        if entry:
-            if new_status.upper() == "COMPLETED":
-                entry.performed_procedure_step_status = "COMPLETED"
-                session.commit()
-                lgr.info(f"DB updated: PatientID {patient_id} set to COMPLETED")
-            elif new_status.upper() == "DISCONTINUED":
-                entry.performed_procedure_step_status = "DISCONTINUED"
-                session.commit()
-                lgr.info(f"DB updated: PatientID {patient_id} set to DISCONTINUED")
+    try:
+        if patient_id and new_status:
+            if patient_name:
+                entry = session.query(WorklistItem).filter_by(
+                    patient_id=patient_id,
+                    patient_name=str(patient_name),
+                ).first()
             else:
-                lgr.warning(f"MPPS N-SET: Unrecognized status {new_status}")
+                entry = session.query(WorklistItem).filter_by(patient_id=patient_id).first()
+            if entry:
+                if normalized_status == "COMPLETED":
+                    entry.performed_procedure_step_status = "COMPLETED"
+                    session.commit()
+                    lgr.info(f"DB updated: PatientID: {patient_id} PatientName: {patient_name if patient_name else 'NaN'} set to COMPLETED")
+                elif normalized_status == "DISCONTINUED":
+                    entry.performed_procedure_step_status = "DISCONTINUED"
+                    session.commit()
+                    lgr.info(f"DB updated: PatientID: {patient_id} PatientName: {patient_name if patient_name else 'NaN'} set to DISCONTINUED")
+                else:
+                    lgr.warning(f"MPPS N-SET: Unrecognized status {new_status}")
+            else:
+                lgr.warning(f"MPPS N-SET: No DB entry found for PatientID: {patient_id} PatientName: {patient_name if patient_name else 'NaN'}")
         else:
-            lgr.warning(f"MPPS N-SET: No DB entry found for PatientID {patient_id}")
-    else:
-        lgr.warning("MPPS N-SET: Missing PatientID or status. No DB update.")
+            lgr.warning("MPPS N-SET: Missing PatientID or status. No DB update.")
+    finally:
+        session.close()
 
-    session.close()
+    if normalized_status in {"COMPLETED", "DISCONTINUED"}:
+        with managed_instances_lock:
+            managed_instances.pop(sop_uid, None)
+            managed_instance_timestamps.pop(sop_uid, None)
     lgr.info(f"MPPS N-SET processed: {sop_uid} -> {new_status}")
 
     return 0x0000, ds  # Always return Success
@@ -240,7 +312,13 @@ def handle_mpps_n_set(event):
 # --------------------------------------------------------------------
 # Start MWL + MPPS SCP Server
 # --------------------------------------------------------------------
-def run_mwl_server(host="0.0.0.0", port=4242, aetitle="MWL_SERVER", allowed_aets=""):
+def run_mwl_server(
+    host="0.0.0.0",
+    port=4242,
+    aetitle="MWL_SERVER",
+    allowed_aets="",
+    query_filters=None,
+):
     """Starts an MWL + MPPS SCP."""
     ae = AE(ae_title=aetitle)
 
@@ -254,7 +332,7 @@ def run_mwl_server(host="0.0.0.0", port=4242, aetitle="MWL_SERVER", allowed_aets
 
     # Register event handlers
     handlers = [
-        (evt.EVT_C_FIND, handle_mwl_find),
+        (evt.EVT_C_FIND, handle_mwl_find, [query_filters]),
         (evt.EVT_N_CREATE, handle_mpps_n_create),
         (evt.EVT_N_SET, handle_mpps_n_set),
     ]

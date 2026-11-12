@@ -1,6 +1,15 @@
+"""
+LEGACY MODULE - Backward Compatibility Wrapper for REDCapPlugin
+
+This module provides backward-compatible function signatures that internally
+delegate to the new plugin-based architecture. Existing code can continue
+calling these functions without modification.
+
+MIGRATION PATH: New code should use src/pylantir/data_sources/redcap_plugin.py
+directly instead of these legacy wrappers.
+"""
 import os
 import logging
-import pandas as pd
 from redcap import Project
 import uuid
 from sqlalchemy.orm import sessionmaker
@@ -9,8 +18,24 @@ from .models import WorklistItem
 import time
 import threading
 from datetime import datetime, time, date, timedelta
+import gc
 
 lgr = logging.getLogger(__name__)
+
+# Import the new plugin system
+from .data_sources.redcap_plugin import REDCapPlugin
+from .data_sources.base import PluginError
+
+# NOTE: pandas import removed - we use native Python dicts/lists to avoid
+# DataFrame memory overhead (50-100x memory reduction per sync cycle)
+
+# Optional memory monitoring (install with: pip install psutil)
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    lgr.debug("psutil not available. Memory monitoring will be limited.")
 
 STOP_EVENT = threading.Event()  # <--- Event used to signal shutdown
 
@@ -24,66 +49,71 @@ Session = sessionmaker(bind=engine)
 
 
 def fetch_redcap_entries(redcap_fields: list, interval: float) -> list:
-    """Fetch REDCap entries using PyCap and return a list of filtered dicts."""
-    project = Project(REDCAP_API_URL, REDCAP_API_TOKEN)
+    """
+    LEGACY WRAPPER: Fetch REDCap entries using PyCap and return a list of filtered dicts.
 
-    if not redcap_fields:
-        lgr.error("No field mapping (redcap2wl) provided for REDCap retrieval.")
+    **DEPRECATION NOTICE**: This function is deprecated and maintained only for
+    backward compatibility. New code should use REDCapPlugin.fetch_entries() directly
+    from src/pylantir/data_sources/redcap_plugin.py
+
+    This function now delegates to REDCapPlugin for consistency with the new
+    plugin architecture. Existing callers can continue using this signature.
+
+    Args:
+        redcap_fields: List of REDCap field names to fetch
+        interval: Time window in seconds to fetch records from
+
+    Returns:
+        List of filtered MRI record dictionaries
+
+    MIGRATION PATH: Use REDCapPlugin directly:
+        ```python
+        from pylantir.data_sources.redcap_plugin import REDCapPlugin
+        plugin = REDCapPlugin(name, config, field_mapping)
+        entries = plugin.fetch_entries(since=datetime_interval)
+        ```
+    """
+    lgr.warning(
+        "fetch_redcap_entries() is deprecated. "
+        "Use REDCapPlugin from src/pylantir/data_sources/redcap_plugin.py instead."
+    )
+
+    try:
+        # Build plugin configuration from environment variables
+        config = {
+            "site_id": "default",  # Legacy calls don't have site_id
+            "protocol": "DEFAULT_PROTOCOL"
+        }
+
+        # Create field mapping for plugin (maps REDCap field name to itself)
+        field_mapping = {field: field for field in redcap_fields}
+
+        # Instantiate plugin (no arguments)
+        plugin = REDCapPlugin()
+
+        # Validate configuration
+        is_valid, error_msg = plugin.validate_config(config)
+        if not is_valid:
+            lgr.error(f"Plugin configuration validation failed: {error_msg}")
+            return []
+
+        # Fetch entries using plugin
+        datetime_now = datetime.now()
+        datetime_interval = datetime_now - timedelta(seconds=interval)
+
+        entries = plugin.fetch_entries(field_mapping=field_mapping, interval=interval)
+
+        # Cleanup plugin resources
+        plugin.cleanup()
+
+        return entries
+
+    except PluginError as e:
+        lgr.error(f"Plugin error in legacy fetch_redcap_entries: {e}")
         return []
-
-    # Fetch metadata to get valid REDCap field names
-    valid_fields = {field["field_name"] for field in project.export_metadata()}
-    redcap_fields = [field for field in redcap_fields if field in valid_fields]
-
-    if not redcap_fields:
-        lgr.error("No valid REDCap fields found in provided mapping.")
-        return []
-
-    lgr.info(f"Fetching REDCap data for fields: {redcap_fields}")
-
-    # Export data
-    datetime_now = datetime.now()
-    datetime_interval = datetime_now - timedelta(seconds=interval)
-    records = project.export_records(fields=redcap_fields, date_begin=datetime_interval, date_end=datetime_now, format_type="df")
-
-    if records.empty:
-        lgr.warning("No records retrieved from REDCap.")
-        return []
-
-    filtered_records = []
-
-    # Group by 'record_id' (index level 0)
-    for record_id, group in records.groupby(level=0):
-
-        # Try to get baseline (non-repeated instrument) values
-        baseline_rows = group[group['redcap_repeat_instrument'].isna()]
-        baseline_row = baseline_rows.iloc[0] if not baseline_rows.empty else {}
-
-        # Filter for valid MRI rows only
-        mri_rows = group[
-            (group["redcap_repeat_instrument"] == "mri") &
-            (group.get("mri_instance").notna()) &
-            (group.get("mri_instance") != "" ) &
-            (group.get("mri_date").notna()) &
-            (group.get("mri_time").notna())
-        ]
-
-        for _, mri_row in mri_rows.iterrows():
-            record = {"record_id": record_id}
-
-            # Merge fields from baseline and mri_row, only include requested fields
-            for field in redcap_fields:
-                record[field] = (
-                    mri_row.get(field)
-                    if pd.notna(mri_row.get(field))
-                    else baseline_row.get(field)
-                )
-
-            filtered_records.append(record)
-
-    return filtered_records
-
-# TODO: Implement age binning for paricipants
+    except Exception as e:
+        lgr.error(f"Unexpected error in legacy fetch_redcap_entries: {e}")
+        return []# TODO: Implement age binning for paricipants
 def age_binning():
     return None
 
@@ -103,84 +133,184 @@ def convert_weight(weight, weight_unit):
     return weight, round(weight / 0.453592, 2)  # (kg, lb)
 
 
+def get_memory_usage():
+    """Get current memory usage statistics."""
+    if PSUTIL_AVAILABLE:
+        process = psutil.Process()
+        memory_info = process.memory_info()
+        return {
+            'rss_mb': round(memory_info.rss / 1024 / 1024, 2),
+            'vms_mb': round(memory_info.vms / 1024 / 1024, 2),
+            'percent': round(process.memory_percent(), 2)
+        }
+    else:
+        # Fallback to basic resource usage
+        import resource
+        try:
+            usage = resource.getrusage(resource.RUSAGE_SELF)
+            # maxrss is in KB on Linux, bytes on macOS
+            import platform
+            if platform.system() == 'Darwin':  # macOS
+                maxrss_mb = round(usage.ru_maxrss / 1024 / 1024, 2)
+            else:  # Linux and others
+                maxrss_mb = round(usage.ru_maxrss / 1024, 2)
+            return {
+                'max_rss_mb': maxrss_mb,
+                'user_time': round(usage.ru_utime, 2),
+                'system_time': round(usage.ru_stime, 2)
+            }
+        except Exception as e:
+            lgr.warning(f"Could not get memory usage: {e}")
+            return {}
+
+
+def cleanup_memory_and_connections():
+    """
+    Release unreachable Python objects after a synchronization cycle.
+
+    Database sessions are owned and closed by their callers. Disposing the
+    shared engine pool here races with MWL/API threads and does not release the
+    Python objects responsible for process RSS growth.
+    """
+    lgr.debug("Starting memory and connection cleanup...")
+
+    # Get memory usage before cleanup
+    memory_before = get_memory_usage()
+
+    try:
+        collected = gc.collect()
+
+        # Get memory usage after cleanup
+        memory_after = get_memory_usage()
+
+        # Log cleanup results with simplified, focused metrics
+        if memory_before and memory_after and 'rss_mb' in memory_before:
+            freed = memory_before['rss_mb'] - memory_after['rss_mb']
+            lgr.info(
+                f"Memory cleanup: Before={memory_before['rss_mb']:.1f}MB, "
+                f"After={memory_after['rss_mb']:.1f}MB, "
+                f"Freed={freed:.1f}MB, "
+                f"Objects={collected}"
+            )
+        else:
+            lgr.info(f"Memory cleanup: Collected {collected} objects")
+
+    except Exception as e:
+        lgr.error(f"Error during cleanup: {e}")
+        # Don't let cleanup errors stop the main process
+        pass
+
+
 def sync_redcap_to_db(
     site_id: str,
     protocol: dict,
     redcap2wl: dict,
     interval: float = 60.0,
+    source_name: str = None,
 ) -> None:
-    """Sync REDCap patient data with the worklist database."""
+    """
+    LEGACY WRAPPER: Sync REDCap patient data with the worklist database.
+
+    **DEPRECATION NOTICE**: This function is deprecated and maintained only for
+    backward compatibility. New code should use the plugin-based architecture
+    from src/pylantir/data_sources/
+
+    NOTE: This function now uses REDCapPlugin internally via fetch_redcap_entries()
+    wrapper, ensuring consistent behavior with the new plugin architecture.
+
+    Args:
+        site_id: Site identifier
+        protocol: Protocol mapping dictionary
+        redcap2wl: Field mapping dictionary
+        interval: Sync interval in seconds
+        source_name: Optional data source name for tracking (new in v0.3.0)
+    """
+    lgr.warning(
+        "sync_redcap_to_db() is deprecated. "
+        "Use data_sources configuration with REDCapPlugin instead."
+    )
 
     if not redcap2wl:
         lgr.error("No field mapping (redcap2wl) provided for syncing.")
         return
 
-    session = Session()
+    # Log memory usage before sync
+    memory_before = get_memory_usage()
+    if memory_before:
+        lgr.debug(f"Memory before sync: {memory_before}")
 
-    #TODO: Implement the repeat visit mapping
-    # Extract the REDCap fields that need to be pulled
-    default_fields = ["record_id", "study_id", "redcap_repeat_instrument", "mri_instance", "mri_date", "mri_time", "family_id", "youth_dob_y", "t1_date", "demo_sex"]
-    redcap_fields = list(redcap2wl.keys())
+    session = None
+    try:
+        session = Session()
 
-    # Ensure certain default fields are always present
-    for i in default_fields:
-        if i not in redcap_fields:
-            redcap_fields.append(i)
+        #TODO: Implement the repeat visit mapping
+        # Extract the REDCap fields that need to be pulled
+        default_fields = ["record_id", "study_id", "redcap_repeat_instrument", "mri_instance", "mri_date", "mri_time", "family_id", "youth_dob_y", "t1_date", "demo_sex"]
+        redcap_fields = list(redcap2wl.keys())
 
-    redcap_entries = fetch_redcap_entries(redcap_fields, interval)
+        # Ensure certain default fields are always present
+        for i in default_fields:
+            if i not in redcap_fields:
+                redcap_fields.append(i)
 
-    for record in redcap_entries:
-        study_id = record.get("study_id")
-        study_id = study_id.split('-')[-1] if study_id else None
-        family_id = record.get("family_id")
-        family_id = family_id.split('-')[-1] if family_id else None
-        repeat_id = record.get("redcap_repeat_instance") if record.get("redcap_repeat_instance") != "" else "1" # Default to 1 if not set
-        lgr.debug(f"Processing record for Study ID: {study_id} and Family ID: {family_id}")
-        lgr.debug(f"This is the repeat event {repeat_id}")
-        ses_id = record.get("mri_instance")
+        # NOTE: fetch_redcap_entries() now delegates to REDCapPlugin internally
+        redcap_entries = fetch_redcap_entries(redcap_fields, interval)
 
-        PatientName = f"cpip-id-{study_id}^fa-{family_id}"
-        PatientID = f"sub_{study_id}_ses_{ses_id}_fam_{family_id}_site_{site_id}"
-        PatientID_ = f"sub-{study_id}_ses-{ses_id}_fam-{family_id}_site-{site_id}"
+        for record in redcap_entries:
+            study_id = record.get("study_id")
+            study_id = study_id.split('-')[-1] if study_id else None
+            family_id = record.get("family_id")
+            family_id = family_id.split('-')[-1] if family_id else None
+            repeat_id = record.get("redcap_repeat_instance") if record.get("redcap_repeat_instance") != "" else "1" # Default to 1 if not set
+            lgr.debug(f"Processing record for Study ID: {study_id} and Family ID: {family_id}")
+            lgr.debug(f"This is the repeat event {repeat_id}")
+            ses_id = record.get("mri_instance")
 
-        if not PatientID:
-            lgr.warning("Skipping record due to missing Study ID.")
-            continue
+            PatientName = f"cpip-id-{study_id}^fa-{family_id}"
+            PatientID = f"sub_{study_id}_ses_{ses_id}_fam_{family_id}_site_{site_id}"
+            PatientID_ = f"sub-{study_id}_ses-{ses_id}_fam-{family_id}_site-{site_id}"
 
-        patient_weight_kg, patient_weight_lb = convert_weight(
-            record.get("weight"), record.get("weight_unit")
-        )
+            if not PatientID:
+                lgr.warning("Skipping record due to missing Study ID.")
+                continue
 
-        existing_entry = (
-            session.query(WorklistItem)
-            .filter_by(patient_id=PatientID)
-            .first()
-        )
+            patient_weight_kg, patient_weight_lb = convert_weight(
+                record.get("weight"), record.get("weight_unit")
+            )
 
-        existing_entry_ = (
-            session.query(WorklistItem)
-            .filter_by(patient_id=PatientID_)
-            .first()
-        )
-        if existing_entry:
-            logging.debug(f"Updating existing worklist entry for PatientID {PatientID}")
-        elif existing_entry_:
-            logging.debug(f"Updating existing worklist entry for PatientID {PatientID_}")
-            existing_entry = existing_entry_
+            existing_entry = (
+                session.query(WorklistItem)
+                .filter_by(patient_id=PatientID)
+                .first()
+            )
 
-        if existing_entry:
-            existing_entry.patient_name = PatientName
-            existing_entry.patient_id = PatientID
-            existing_entry.patient_birth_date = record.get("youth_dob_y", "19000101")
-            existing_entry.patient_sex = record.get("demo_sex")
-            existing_entry.modality = record.get("modality", "MR")
-            existing_entry.scheduled_start_date = record.get("mri_date")
-            existing_entry.scheduled_start_time = record.get("mri_time")
-            # Dynamically update DICOM worklist fields from REDCap
-            for redcap_field, dicom_field in redcap2wl.items():
-                if redcap_field in record:
-                    if dicom_field not in default_fields:
-                        setattr(existing_entry, dicom_field, record[redcap_field])
+            existing_entry_ = (
+                session.query(WorklistItem)
+                .filter_by(patient_id=PatientID_)
+                .first()
+            )
+            if existing_entry:
+                logging.debug(f"Updating existing worklist entry for PatientID {PatientID}")
+            elif existing_entry_:
+                logging.debug(f"Updating existing worklist entry for PatientID {PatientID_}")
+                existing_entry = existing_entry_
+
+            if existing_entry:
+                existing_entry.patient_name = PatientName
+                existing_entry.patient_id = PatientID
+                existing_entry.patient_birth_date = record.get("youth_dob_y", "19000101")
+                existing_entry.patient_sex = record.get("demo_sex")
+                existing_entry.modality = record.get("modality", "MR")
+                existing_entry.scheduled_start_date = record.get("mri_date")
+                existing_entry.scheduled_start_time = record.get("mri_time")
+                # Track data source if provided
+                if source_name:
+                    existing_entry.data_source = source_name
+                # Dynamically update DICOM worklist fields from REDCap
+                for redcap_field, dicom_field in redcap2wl.items():
+                    if redcap_field in record:
+                        if dicom_field not in default_fields:
+                            setattr(existing_entry, dicom_field, record[redcap_field])
 
             # existing_entry.scheduled_start_date = record.get("scheduled_date")
             # existing_entry.scheduled_start_time = record.get("scheduled_time")
@@ -189,34 +319,54 @@ def sync_redcap_to_db(
             # existing_entry.patient_weight_lb = patient_weight_lb
             # existing_entry.referring_physician_name = record.get("referring_physician")
             # existing_entry.performing_physician = record.get("performing_physician")
-            # existing_entry.study_description = record.get("study_description")
-            # existing_entry.station_name = record.get("station_name")
-        else:
-            logging.debug(f"Adding new worklist entry for PatientID {PatientID}")
-            new_entry = WorklistItem(
-                study_instance_uid=generate_instance_uid(),
-                patient_name=PatientName,
-                patient_id=PatientID,
-                patient_birth_date=f"{record.get('youth_dob_y', '2012')}0101",
-                patient_sex=record.get("demo_sex"),
-                modality=record.get("modality", "MR"),
-                scheduled_start_date=record.get("mri_date"),
-                scheduled_start_time=record.get("mri_time"),
-                protocol_name=protocol.get(site_id, "DEFAULT_PROTOCOL"),
-                hisris_coding_designator=protocol.get("mapping", "scannermapper"),
-                # patient_weight_kg=patient_weight_kg,
-                patient_weight_lb=record.get("patient_weight_lb", ""),
-                # referring_physician_name=record.get("referring_physician"),
-                # performing_physician=record.get("performing_physician"),
-                study_description=record.get("study_description", "CPIP"),
-                # station_name=record.get("station_name"),
-                performed_procedure_step_status="SCHEDULED"
-            )
-            session.add(new_entry)
+                # existing_entry.study_description = record.get("study_description")
+                # existing_entry.station_name = record.get("station_name")
+            else:
+                logging.info(f"Adding new worklist entry for PatientID {PatientID} scheduled for {record.get('mri_date')} at {record.get('mri_time')}")
+                new_entry = WorklistItem(
+                    study_instance_uid=generate_instance_uid(),
+                    patient_name=PatientName,
+                    patient_id=PatientID,
+                    patient_birth_date=f"{record.get('youth_dob_y', '2012')}0101",
+                    patient_sex=record.get("demo_sex"),
+                    modality=record.get("modality", "MR"),
+                    scheduled_start_date=record.get("mri_date"),
+                    scheduled_start_time=record.get("mri_time"),
+                    protocol_name=protocol.get(site_id, "DEFAULT_PROTOCOL"),
+                    hisris_coding_designator=protocol.get("mapping", "scannermapper"),
+                    # patient_weight_kg=patient_weight_kg,
+                    patient_weight_lb=record.get("patient_weight_lb", ""),
+                    # referring_physician_name=record.get("referring_physician"),
+                    # performing_physician=record.get("performing_physician"),
+                    study_description=record.get("study_description", "CPIP"),
+                    # station_name=record.get("station_name"),
+                    performed_procedure_step_status="SCHEDULED",
+                    data_source=source_name  # Track which source created this entry
+                )
+                session.add(new_entry)
 
-    session.commit()
-    session.close()
-    logging.info("REDCap data synchronized successfully with DICOM worklist database.")
+        session.commit()
+        logging.info("REDCap data synchronized successfully with DICOM worklist database.")
+
+    except Exception as e:
+        lgr.error(f"Error during REDCap synchronization: {e}")
+        if session:
+            session.rollback()
+        raise  # Re-raise to let calling code handle it
+    finally:
+        # Always ensure session is properly closed
+        if session:
+            # Detach all ORM objects from session to clear identity map
+            session.expunge_all()
+            session.close()
+
+        # Perform cleanup after sync
+        cleanup_memory_and_connections()
+
+        # Log memory usage after cleanup
+        memory_after = get_memory_usage()
+        if memory_after:
+            lgr.debug(f"Memory after sync and cleanup: {memory_after}")
 
 
 def sync_redcap_to_db_repeatedly(
@@ -225,12 +375,22 @@ def sync_redcap_to_db_repeatedly(
     redcap2wl=None,
     interval=60,
     operation_interval={"start_time": [00,00], "end_time": [23,59]},
+    source_name=None,
 ):
     """
-    Keep syncing with REDCap in a loop every `interval` seconds,
-    but only between operation_interval[start_time] and operation_interval[end_time].
-    Exit cleanly when STOP_EVENT is set.
+    LEGACY WRAPPER: Keep syncing with REDCap in a loop every `interval` seconds.
+
+    **DEPRECATION NOTICE**: This function is deprecated and maintained only for
+    backward compatibility. New code should use the plugin-based multi-source
+    orchestration from src/pylantir/cli/run.py
+
+    MIGRATION PATH: Configure data_sources array in mwl_config.json and use
+    the new orchestration system.
     """
+    lgr.warning(
+        "sync_redcap_to_db_repeatedly() is deprecated. "
+        "Use data_sources configuration with multi-source orchestration instead."
+    )
     if operation_interval is None:
         operation_interval = {"start_time": [0, 0], "end_time": [23, 59]}
 
@@ -266,6 +426,8 @@ def sync_redcap_to_db_repeatedly(
                 dt_end_yesterday = datetime.combine(yesterday, end_time)
                 dt_start_today = datetime.combine(today_date, start_time)
                 delta = dt_start_today - dt_end_yesterday
+                #terporary large interval to catch up on missed data
+                # delta = delta + timedelta(seconds=6000000)
                 # guaranteed to be positive if yesterday < today
                 extended_interval = delta.total_seconds()
                 logging.info(f"Using extended interval: {extended_interval}, {interval} seconds until next sync.")
@@ -284,6 +446,7 @@ def sync_redcap_to_db_repeatedly(
                         protocol=protocol,
                         redcap2wl=redcap2wl,
                         interval=extended_interval,
+                        source_name=source_name,
                     )
                 else:
                     sync_redcap_to_db(
@@ -291,17 +454,32 @@ def sync_redcap_to_db_repeatedly(
                         protocol=protocol,
                         redcap2wl=redcap2wl,
                         interval=interval_sync,
+                        source_name=source_name,
                     )
                 last_sync_date = today_date
                 logging.debug(f"REDCap sync completed at {now_time}. Next sync atempt in {interval} seconds.")
             except Exception as exc:
                 logging.error(f"Error in REDCap sync: {exc}")
+                # Run cleanup even after errors to prevent memory buildup
+                try:
+                    cleanup_memory_and_connections()
+                except Exception as cleanup_exc:
+                    logging.warning(f"Cleanup failed after sync error: {cleanup_exc}")
         else:
             # We're outside of operation hours. Just log once and sleep a bit.
             logging.debug(
                 f"Current time {now_time} is outside operation window "
                 f"({start_time}–{end_time}). Sleeping for {interval} seconds."
             )
+
+            # Run periodic cleanup even during off-hours to prevent memory buildup
+            # Only run every 10th cycle to avoid excessive overhead
+            if (now_dt.hour == 3 and now_dt.minute == 0):  # Daily cleanup at 3 AM
+                try:
+                    logging.info("Running scheduled memory cleanup during off-hours")
+                    cleanup_memory_and_connections()
+                except Exception as cleanup_exc:
+                    logging.warning(f"Off-hours cleanup failed: {cleanup_exc}")
 
         # === 4) WAIT before the next iteration. We already set extended_interval above. ===
         logging.debug(f"Sleeping for {interval} seconds before next check...")

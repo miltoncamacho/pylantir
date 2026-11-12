@@ -6,7 +6,7 @@
     This script provides the SQLAlchemy model for the WorklistItem table.
 """
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, UniqueConstraint
 import logging
 
 Base = declarative_base()
@@ -15,6 +15,13 @@ lgr = logging.getLogger(__name__)
 
 class WorklistItem(Base):
     __tablename__ = 'worklist_items'
+    __table_args__ = (
+        UniqueConstraint(
+            "data_source",
+            "source_record_id",
+            name="uq_worklist_source_record",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     study_instance_uid = Column(String(100))
@@ -42,6 +49,12 @@ class WorklistItem(Base):
     except:
         lgr.warning("Could not get hisris_coding_designator check models.py ")
     performed_procedure_step_status = Column(String, default="SCHEDULED")
+
+    # Data source tracking (for multi-source architecture)
+    data_source = Column(String(255), nullable=True, default=None)
+    # Stable identifier assigned by the upstream source (for example a
+    # Calpendo booking ID). It is scoped by data_source.
+    source_record_id = Column(String(255), nullable=True, default=None)
 
 
     def __repr__(self):

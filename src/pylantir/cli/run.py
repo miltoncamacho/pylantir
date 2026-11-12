@@ -11,6 +11,7 @@ import sys
 import importlib.util
 from dotenv import set_key
 from concurrent.futures import ThreadPoolExecutor  # for background thread
+from sqlalchemy import or_
 
 lgr = logging.getLogger(__name__)
 
@@ -39,11 +40,16 @@ def parse_args():
                     help="""
                         Command to run:
                         - start: start the MWL server
-                        - query: query the MWL db
+                        - query-db: query the MWL db
                         - test-client: run tests for MWL
                         - test-mpps: run tests for MPPS
+                        - start-api: start the FastAPI server (requires [api] dependencies)
+                        - admin-password: change admin password
+                        - create-user: create a new user (admin only)
+                        - list-users: list all users (admin only)
                     """,
-                    choices=["start", "query-db", "test-client", "test-mpps"],
+                    choices=["start", "query-db", "test-client", "test-mpps",
+                            "start-api", "admin-password", "create-user", "list-users"],
                     )
     p.add_argument("--AEtitle", help="AE Title for the server")
     p.add_argument("--ip", help="IP/host address for the server", default="0.0.0.0")
@@ -99,11 +105,63 @@ def parse_args():
         help="SOPInstanceUID to test MPPS",
     )
 
+    # API server arguments
+    p.add_argument(
+        "--api-host",
+        default="0.0.0.0",
+        type=str,
+        help="API server host address (default: 0.0.0.0)"
+    )
+
+    p.add_argument(
+        "--api-port",
+        default=8000,
+        type=int,
+        help="API server port (default: 8000)"
+    )
+
+    # User management arguments
+    p.add_argument(
+        "--username",
+        default=None,
+        type=str,
+        help="Username for user operations"
+    )
+
+    p.add_argument(
+        "--password",
+        default=None,
+        type=str,
+        help="Password for user operations"
+    )
+
+    p.add_argument(
+        "--email",
+        default=None,
+        type=str,
+        help="Email for user creation"
+    )
+
+    p.add_argument(
+        "--full-name",
+        default=None,
+        type=str,
+        help="Full name for user creation"
+    )
+
+    p.add_argument(
+        "--role",
+        default="read",
+        choices=["admin", "write", "read"],
+        help="User role (default: read)"
+    )
+
     return p.parse_args()
 
 def load_config(config_path=None):
     """
     Load configuration file, either from a user-provided path or the default package location.
+    Auto-converts legacy configuration format to new data_sources format.
 
     Args:
         config_path (str | Path, optional): Path to the configuration JSON file.
@@ -120,6 +178,35 @@ def load_config(config_path=None):
         with config_path.open("r") as f:
             config_data = json.load(f)
         lgr.info(f"Loaded configuration from {config_path}")
+
+        # Auto-convert legacy configuration format
+        if "data_sources" not in config_data and "redcap2wl" in config_data:
+            lgr.warning(
+                "Legacy configuration format detected. "
+                "Consider migrating to 'data_sources' format for better flexibility. "
+                "See config/mwl_config_multi_source_example.json for reference."
+            )
+
+            # Convert legacy format to data_sources array
+            legacy_source = {
+                "name": "redcap_legacy",
+                "type": "redcap",
+                "enabled": True,
+                "sync_interval": config_data.get("db_update_interval", 60),
+                "operation_interval": config_data.get(
+                    "operation_interval",
+                    {"start_time": [0, 0], "end_time": [23, 59]}
+                ),
+                "config": {
+                    "site": config_data.get("site"),
+                    "protocol": config_data.get("protocol", {}),
+                },
+                "field_mapping": config_data.get("redcap2wl", {})
+            }
+
+            config_data["data_sources"] = [legacy_source]
+            lgr.info("Auto-converted legacy configuration to data_sources format")
+
         return config_data
 
     except FileNotFoundError:
@@ -156,10 +243,17 @@ def run_test_script(script_name, **kwargs):
     else:
         lgr.error(f"Test script {script_name} does not have a 'main' function.")
 
-def update_env_with_config(db_path="~/Desktop/worklist.db", db_echo="False", env_path=".env"):
+def update_env_with_config(config):
     """
-    Updates db_path from the config to DB_PATH in .env.
+    Updates environment variables from configuration.
+
+    Args:
+        config: Configuration dictionary
     """
+    # Extract values from config with defaults
+    db_path = config.get("db_path", "~/Desktop/worklist.db")
+    db_echo = str(config.get("db_echo", "False"))
+    users_db_path = config.get("users_db_path")
 
     # Expand the db_path from the config
     try:
@@ -168,15 +262,38 @@ def update_env_with_config(db_path="~/Desktop/worklist.db", db_echo="False", env
         lgr.error("Invalid db_path in config.")
         return
 
-    # Set the default env_path to the src/pylantir folder
-    dot_env_path = pkg_resources.files("pylantir").joinpath(env_path)
-    dot_env_path = Path.Path(dot_env_path)
+    # Set environment variables directly (for API server)
+    os.environ["DB_PATH"] = db_path_expanded
+    os.environ["DB_ECHO"] = db_echo
 
-    # Write to .env using python-dotenv's set_key
-    set_key(dot_env_path, "DB_PATH", db_path_expanded)
-    set_key(dot_env_path, "DB_ECHO", db_echo)
+    # Set users database path if provided in config
+    if users_db_path:
+        try:
+            users_db_path_expanded = os.path.expanduser(users_db_path)
+            os.environ["USERS_DB_PATH"] = users_db_path_expanded
+            lgr.debug(f"USERS_DB_PATH set to {users_db_path_expanded}")
+        except AttributeError:
+            lgr.error("Invalid users_db_path in config.")
 
-    lgr.debug(f"DB_PATH set to {db_path_expanded} and DB_ECHO to {db_echo} in {dot_env_path}")
+    # Set CORS configuration if provided
+    api_config = config.get("api", {})
+    if "cors_allowed_origins" in api_config:
+        import json
+        os.environ["CORS_ALLOWED_ORIGINS"] = json.dumps(api_config["cors_allowed_origins"])
+        lgr.debug(f"CORS origins set to {api_config['cors_allowed_origins']}")
+
+    if "cors_allow_credentials" in api_config:
+        os.environ["CORS_ALLOW_CREDENTIALS"] = str(api_config["cors_allow_credentials"])
+
+    if "cors_allow_methods" in api_config:
+        import json
+        os.environ["CORS_ALLOW_METHODS"] = json.dumps(api_config["cors_allow_methods"])
+
+    if "cors_allow_headers" in api_config:
+        import json
+        os.environ["CORS_ALLOW_HEADERS"] = json.dumps(api_config["cors_allow_headers"])
+
+    lgr.debug(f"Environment configured: DB_PATH={db_path_expanded}, DB_ECHO={db_echo}")
 
 def main() -> None:
     args = parse_args()
@@ -196,58 +313,271 @@ def main() -> None:
     if (args.command == "start"):
         # Load configuration (either user-specified or default)
         config = load_config(args.pylantir_config)
-        # Extract the database path (default to worklist.db if missing) &
-        # Extract the database echo setting (default to False if missing)
-        db_path = config.get("db_path", "./worklist.db")
-        db_echo = config.get("db_echo", "False")
-        update_env_with_config(db_path=db_path, db_echo=db_echo)
-
+        # Load configuration into environment variables
+        update_env_with_config(config)
 
         from ..mwl_server import run_mwl_server
-        from ..redcap_to_db import sync_redcap_to_db_repeatedly
-
-        # Extract the database update interval (default to 60 seconds if missing)
-        db_update_interval = config.get("db_update_interval", 60)
-
-        # Extract the operation interval (default from 00:00 to 23:59 hours if missing)
-        operation_interval = config.get("operation_interval", {"start_time": [0,0], "end_time": [23,59]})
 
         # Extract allowed AE Titles (default to empty list if missing)
         allowed_aet = config.get("allowed_aet", [])
 
-        # Extract the site id
-        site = config.get("site", None)
+        # Check if using new data_sources format or legacy format
+        if "data_sources" in config:
+            # NEW: Multi-source orchestration using plugin architecture
+            lgr.info("Using new data_sources configuration format")
 
-        # Extract the redcap to worklist mapping
-        redcap2wl = config.get("redcap2wl", {})
+            from ..data_sources import get_plugin
+            from ..data_sources.base import PluginError
+            from ..redcap_to_db import STOP_EVENT
+            import threading
 
-        # EXtract protocol mapping
-        protocol = config.get("protocol", {})
+            data_sources = config.get("data_sources", [])
+            enabled_sources = [src for src in data_sources if src.get("enabled", True)]
 
-        # Create and update the MWL database
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            future = executor.submit(
-                sync_redcap_to_db_repeatedly,
-                site_id=site,
-                protocol=protocol,
-                redcap2wl=redcap2wl,
-                interval=db_update_interval,
-                operation_interval=operation_interval,
-            )
+            if not enabled_sources:
+                lgr.warning("No enabled data sources found in configuration")
+            else:
+                lgr.info(f"Found {len(enabled_sources)} enabled data source(s)")
 
-                # sync_redcap_to_db(
-                #     mri_visit_mapping=mri_visit_session_mapping,
-                #     site_id=site,
-                #     protocol=protocol,
-                #     redcap2wl=redcap2wl,
-                # )
+            def sync_data_source_repeatedly(source_config):
+                """
+                Generic sync loop for any data source plugin.
 
-            run_mwl_server(
-                host=args.ip,
-                port=args.port,
-                aetitle=args.AEtitle,
-                allowed_aets=allowed_aet,
-            )
+                This function works with any plugin type (REDCap, CSV, API, etc.)
+                by using the plugin interface rather than source-specific code.
+                """
+                source_name = source_config.get("name", "unknown")
+                source_type = source_config.get("type", "unknown")
+
+                try:
+                    # Get and instantiate the plugin
+                    PluginClass = get_plugin(source_type)
+                    lgr.debug(f"[{source_name}] Initializing {source_type} plugin")
+
+                    plugin = PluginClass()
+
+                    # Validate plugin configuration
+                    plugin_config = dict(source_config.get("config", {}))
+                    if "field_mapping" in source_config:
+                        plugin_config["field_mapping"] = source_config.get("field_mapping")
+                    if "window_mode" in source_config:
+                        plugin_config["window_mode"] = source_config.get("window_mode")
+                    if "daily_window" in source_config:
+                        plugin_config["daily_window"] = source_config.get("daily_window")
+
+                    is_valid, error_msg = plugin.validate_config(plugin_config)
+                    if not is_valid:
+                        lgr.error(f"[{source_name}] Configuration validation failed: {error_msg}")
+                        return
+
+                    # Extract sync settings
+                    sync_interval = source_config.get("sync_interval", 60)
+                    operation_interval = source_config.get("operation_interval", {
+                        "start_time": [0, 0],
+                        "end_time": [23, 59]
+                    })
+
+                    lgr.info(f"[{source_name}] Starting sync loop (interval: {sync_interval}s)")
+
+                    # Import database and sync utilities
+                    from ..db_setup import Session
+                    from ..redcap_to_db import cleanup_memory_and_connections
+                    from ..worklist_sync import upsert_worklist_record
+                    from datetime import datetime, time as dt_time, timedelta
+                    import logging
+
+                    # Parse operation interval
+                    start_h, start_m = operation_interval.get("start_time", [0, 0])
+                    end_h, end_m = operation_interval.get("end_time", [23, 59])
+                    start_time = dt_time(start_h, start_m)
+                    end_time = dt_time(end_h, end_m)
+
+                    last_sync_date = datetime.now().date() - timedelta(days=1)
+                    interval_sync = sync_interval + 300  # Overlap to avoid missing data
+
+                    # Sync loop
+                    while not STOP_EVENT.is_set():
+                        is_first_run = False
+                        extended_interval = sync_interval
+
+                        now_dt = datetime.now().replace(second=0, microsecond=0)
+                        now_time = now_dt.time()
+                        today_date = now_dt.date()
+
+                        # Only sync within operation interval
+                        if start_time <= now_time <= end_time:
+                            is_first_run = (last_sync_date != today_date)
+
+                            if is_first_run and (last_sync_date is not None):
+                                yesterday = last_sync_date
+                                dt_end_yesterday = datetime.combine(yesterday, end_time)
+                                dt_start_today = datetime.combine(today_date, start_time)
+                                delta = dt_start_today - dt_end_yesterday
+                                extended_interval = delta.total_seconds()
+                                # temporary increase interval to cover gap since last sync
+                                # extended_interval += 6000000
+                                logging.info(f"[{source_name}] First sync of the day at {now_time}")
+
+                            # Fetch entries using plugin
+                            entries = None
+                            session = None
+                            try:
+                                fetch_interval = extended_interval if is_first_run else interval_sync
+                                field_mapping = source_config.get("field_mapping", {})
+
+                                lgr.debug(f"[{source_name}] Fetching entries (interval: {fetch_interval}s)")
+                                entries = plugin.fetch_entries(
+                                    field_mapping=field_mapping,
+                                    interval=fetch_interval
+                                )
+
+                                if entries:
+                                    lgr.info(f"[{source_name}] Fetched {len(entries)} entries")
+
+                                    # Get source-specific config
+                                    source_settings = source_config.get("config", {})
+                                    site_id = source_settings.get("site") or source_settings.get("site_id")
+                                    protocol = source_settings.get("protocol", {})
+
+                                    # Process entries (source-agnostic)
+                                    session = Session()
+                                    try:
+                                        for record in entries:
+                                            patient_id = record.get("patient_id")
+                                            lgr.info(f"[{source_name}] Processing record for patient_id: {patient_id}")
+                                            if not patient_id:
+                                                lgr.info(f"[{source_name}] Skipping record with missing patient_id")
+                                                continue
+                                            upsert_worklist_record(
+                                                session,
+                                                record,
+                                                source_name=source_name,
+                                                protocol=protocol,
+                                                site_id=site_id,
+                                                match_candidates=plugin.get_record_match_candidates(
+                                                    record,
+                                                    source_name,
+                                                ),
+                                                record_preparer=plugin.prepare_record_for_upsert,
+                                            )
+
+                                        session.commit()
+                                        lgr.info(f"[{source_name}] Sync completed successfully")
+                                    except Exception as e:
+                                        session.rollback()
+                                        lgr.error(f"[{source_name}] Database error: {e}")
+
+                                last_sync_date = today_date
+
+                            except Exception as e:
+                                lgr.error(f"[{source_name}] Sync error: {e}")
+                                import traceback
+                                traceback.print_exc()
+                            finally:
+                                if session is not None:
+                                    session.expunge_all()
+                                    session.close()
+                                if entries is not None:
+                                    entries.clear()
+                                try:
+                                    plugin.cleanup()
+                                except Exception as cleanup_exc:
+                                    lgr.warning(
+                                        "[%s] Plugin cleanup failed: %s",
+                                        source_name,
+                                        cleanup_exc,
+                                    )
+                                cleanup_memory_and_connections()
+
+                        # Wait before next iteration
+                        STOP_EVENT.wait(sync_interval)
+
+                    lgr.info(f"[{source_name}] Exiting sync loop (STOP_EVENT set)")
+
+                except PluginError as e:
+                    lgr.error(f"[{source_name}] Plugin error: {e}")
+                except Exception as e:
+                    lgr.error(f"[{source_name}] Unexpected error: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+            # Start a thread for each enabled data source
+            max_workers = len(enabled_sources) + 1  # +1 for MWL server
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit sync tasks for each data source
+                for source in enabled_sources:
+                    source_name = source.get("name", "unknown")
+                    lgr.info(f"Starting background sync for data source: {source_name}")
+                    executor.submit(sync_data_source_repeatedly, source)
+
+                # Start the MWL server in the main thread
+                query_filters = []
+                for source in enabled_sources:
+                    source_plugin = get_plugin(source.get("type", "unknown"))()
+                    filter_config = dict(source.get("config", {}))
+                    if "window_mode" in source:
+                        filter_config["window_mode"] = source["window_mode"]
+                    if "daily_window" in source:
+                        filter_config["daily_window"] = source["daily_window"]
+                    query_filter = source_plugin.get_mwl_query_filter(
+                        source.get("name", "unknown"),
+                        config=filter_config,
+                    )
+                    if query_filter is not None:
+                        query_filters.append(query_filter)
+                run_mwl_server(
+                    host=args.ip,
+                    port=args.port,
+                    aetitle=args.AEtitle,
+                    allowed_aets=allowed_aet,
+                    query_filters=query_filters,
+                )
+
+        else:
+            # LEGACY: Fall back to old single-source configuration
+            lgr.warning("Using legacy configuration format. Consider migrating to data_sources format.")
+
+            from ..redcap_to_db import sync_redcap_to_db_repeatedly
+            from ..data_sources.redcap_plugin import REDCapPlugin
+
+            # Extract the database update interval (default to 60 seconds if missing)
+            db_update_interval = config.get("db_update_interval", 60)
+
+            # Extract the operation interval (default from 00:00 to 23:59 hours if missing)
+            operation_interval = config.get("operation_interval", {"start_time": [0,0], "end_time": [23,59]})
+
+            # Extract the site id
+            site = config.get("site", None)
+
+            # Extract the redcap to worklist mapping
+            redcap2wl = config.get("redcap2wl", {})
+
+            # Extract protocol mapping
+            protocol = config.get("protocol", {})
+
+            # Create and update the MWL database
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                future = executor.submit(
+                    sync_redcap_to_db_repeatedly,
+                    site_id=site,
+                    protocol=protocol,
+                    redcap2wl=redcap2wl,
+                    interval=db_update_interval,
+                    operation_interval=operation_interval,
+                )
+
+                run_mwl_server(
+                    host=args.ip,
+                    port=args.port,
+                    aetitle=args.AEtitle,
+                    allowed_aets=allowed_aet,
+                    query_filters=[
+                        REDCapPlugin().get_mwl_query_filter(
+                            "REDCap",
+                            include_unscoped=True,
+                        )
+                    ],
+                )
 
     if (args.command == "query-db"):
         from ..mwl_server import run_mwl_server
@@ -285,6 +615,231 @@ def main() -> None:
             study_uid=args.study_uid,
             sop_instance_uid=args.sop_uid,
         )
+
+    if (args.command == "start-api"):
+        lgr.info("Starting Pylantir FastAPI server")
+        try:
+            # Check if API dependencies are available
+            import uvicorn
+
+            # Load configuration for database setup
+            config = load_config(args.pylantir_config)
+            update_env_with_config(config)
+            users_db_path = config.get("users_db_path")  # Optional users database path
+
+            # Import API app after env vars are set (DB_PATH, DB_ECHO, etc.)
+            from ..api_server import app
+            from ..auth_db_setup import init_auth_database, create_initial_admin_user
+
+            # Initialize authentication database with configured path
+            init_auth_database(users_db_path)
+            create_initial_admin_user(users_db_path)
+
+            lgr.info(f"API server starting on {args.api_host}:{args.api_port}")
+            lgr.info("API documentation available at /docs")
+            lgr.info("Default admin credentials: username='admin', password='admin123'")
+            lgr.warning("Change the admin password immediately using 'pylantir admin-password'")
+
+            uvicorn.run(app, host=args.api_host, port=args.api_port)
+
+        except ImportError:
+            lgr.error("API dependencies not installed. Install with: pip install pylantir[api]")
+            sys.exit(1)
+        except Exception as e:
+            lgr.error(f"Failed to start API server: {e}")
+            sys.exit(1)
+
+    if (args.command == "admin-password"):
+        lgr.info("Changing admin password")
+        try:
+            from ..auth_db_setup import get_auth_db, init_auth_database
+            from ..auth_models import User, UserRole
+            from ..auth_utils import get_password_hash
+            import getpass
+
+            # Load configuration to get users_db_path if available
+            config = load_config(args.pylantir_config) if hasattr(args, 'pylantir_config') and args.pylantir_config else {}
+            users_db_path = config.get("users_db_path")
+
+            # Initialize database
+            init_auth_database(users_db_path)
+
+            # Get current password
+            current_password = getpass.getpass("Enter current admin password: ")
+
+            # Get new password
+            new_password = getpass.getpass("Enter new password: ")
+            confirm_password = getpass.getpass("Confirm new password: ")
+
+            if new_password != confirm_password:
+                lgr.error("Passwords do not match")
+                sys.exit(1)
+
+            if len(new_password) < 8:
+                lgr.error("Password must be at least 8 characters long")
+                sys.exit(1)
+
+            # Update password in database
+            db = next(get_auth_db())
+            admin_user = db.query(User).filter(
+                User.username == (args.username or "admin")
+            ).first()
+
+            if not admin_user:
+                lgr.error("Admin user not found")
+                sys.exit(1)
+
+            from ..auth_utils import verify_password
+            if not verify_password(current_password, admin_user.hashed_password):
+                lgr.error("Current password is incorrect")
+                sys.exit(1)
+
+            # Update password
+            admin_user.hashed_password = get_password_hash(new_password)
+            db.commit()
+
+            lgr.info("Admin password updated successfully")
+
+        except ImportError:
+            lgr.error("API dependencies not installed. Install with: pip install pylantir[api]")
+            sys.exit(1)
+        except Exception as e:
+            lgr.error(f"Failed to change admin password: {e}")
+            sys.exit(1)
+
+    if (args.command == "create-user"):
+        lgr.info("Creating new user")
+        try:
+            from ..auth_db_setup import get_auth_db, init_auth_database
+            from ..auth_models import User, UserRole
+            from ..auth_utils import get_password_hash
+            import getpass
+
+            # Load configuration to get users_db_path if available
+            config = load_config(args.pylantir_config) if hasattr(args, 'pylantir_config') and args.pylantir_config else {}
+            users_db_path = config.get("users_db_path")
+
+            # Initialize database
+            init_auth_database(users_db_path)
+
+            # Get admin credentials
+            admin_username = input("Enter admin username: ") or "admin"
+            admin_password = getpass.getpass("Enter admin password: ")
+
+            # Get new user details
+            username = args.username or input("Enter new username: ")
+            email = args.email or input("Enter email (optional): ") or None
+            full_name = args.full_name or input("Enter full name (optional): ") or None
+            password = args.password or getpass.getpass("Enter password for new user: ")
+
+            # Get user role with interactive prompt
+            if args.role == "read":  # Default value, prompt for role
+                print("\nAvailable user roles:")
+                print("  admin - Full administrative access")
+                print("  write - Can create, read, update, and delete records")
+                print("  read  - Read-only access (default)")
+                role_input = input("Enter user role (admin/write/read) [read]: ").lower().strip()
+                if role_input in ["admin", "write", "read"]:
+                    role = role_input
+                elif role_input == "":
+                    role = "read"  # Keep default
+                else:
+                    lgr.error(f"Invalid role '{role_input}'. Valid roles are: admin, write, read")
+                    sys.exit(1)
+            else:
+                role = args.role
+
+            if not username or not password:
+                lgr.error("Username and password are required")
+                sys.exit(1)
+
+            # Verify admin credentials
+            db = next(get_auth_db())
+            from ..auth_utils import authenticate_user
+            admin_user = authenticate_user(db, admin_username, admin_password)
+
+            if not admin_user or admin_user.role != UserRole.ADMIN:
+                lgr.error("Invalid admin credentials or insufficient permissions")
+                sys.exit(1)
+
+            # Check if username already exists
+            existing_user = db.query(User).filter(User.username == username).first()
+            if existing_user:
+                lgr.error(f"Username '{username}' already exists")
+                sys.exit(1)
+
+            # Create new user
+            from datetime import datetime
+            new_user = User(
+                username=username,
+                email=email,
+                full_name=full_name,
+                hashed_password=get_password_hash(password),
+                role=UserRole(role),
+                is_active=True,
+                created_at=datetime.utcnow(),
+                created_by=admin_user.id
+            )
+
+            db.add(new_user)
+            db.commit()
+
+            lgr.info(f"User '{username}' created successfully with role '{role}'")
+
+        except ImportError:
+            lgr.error("API dependencies not installed. Install with: pip install pylantir[api]")
+            sys.exit(1)
+        except Exception as e:
+            lgr.error(f"Failed to create user: {e}")
+            sys.exit(1)
+
+    if (args.command == "list-users"):
+        lgr.info("Listing all users")
+        try:
+            from ..auth_db_setup import get_auth_db, init_auth_database
+            from ..auth_models import User, UserRole
+            import getpass
+
+            # Load configuration to get users_db_path if available
+            config = load_config(args.pylantir_config) if hasattr(args, 'pylantir_config') and args.pylantir_config else {}
+            users_db_path = config.get("users_db_path")
+
+            # Initialize database
+            init_auth_database(users_db_path)
+
+            # Get admin credentials
+            admin_username = input("Enter admin username: ") or "admin"
+            admin_password = getpass.getpass("Enter admin password: ")
+
+            # Verify admin credentials
+            db = next(get_auth_db())
+            from ..auth_utils import authenticate_user
+            admin_user = authenticate_user(db, admin_username, admin_password)
+
+            if not admin_user or admin_user.role != UserRole.ADMIN:
+                lgr.error("Invalid admin credentials or insufficient permissions")
+                sys.exit(1)
+
+            # List all users
+            users = db.query(User).all()
+
+            print("\nUsers:")
+            print("=" * 80)
+            print(f"{'ID':<5} {'Username':<20} {'Role':<10} {'Active':<8} {'Email':<25} {'Last Login'}")
+            print("-" * 80)
+
+            for user in users:
+                last_login = user.last_login.strftime("%Y-%m-%d %H:%M") if user.last_login else "Never"
+                print(f"{user.id:<5} {user.username:<20} {user.role.value:<10} {user.is_active:<8} {user.email or 'N/A':<25} {last_login}")
+
+            print(f"\nTotal users: {len(users)}")
+
+        except ImportError:
+            lgr.error("API dependencies not installed. Install with: pip install pylantir[api]")
+            sys.exit(1)
+        except Exception as e:
+            lgr.error(f"Failed to list users: {e}")
+            sys.exit(1)
 
 
 if __name__ == "__main__":
