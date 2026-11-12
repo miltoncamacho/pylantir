@@ -1,10 +1,9 @@
 [build-system]
-requires = ["flit_core >=2,<4"]
-build-backend = "flit_core.buildapi"
+requires = ["hatchling>=1.27,<2", "hatch-vcs>=0.4,<1"]
+build-backend = "hatchling.build"
 
 [project]
 name =  "pylantir"
-version = "0.4.8"
 authors = [
     {name = "Milton Camacho", email = "miltoncamachoicc@gmail.com"},
 ]
@@ -21,7 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11"
 ]
 requires-python = ">=3.11.1"
-dynamic = []
+dynamic = ["version"]
 
 dependencies = [
     "pynetdicom",
@@ -79,8 +78,11 @@ Documentation = "https://github.com/miltoncamacho/pylantir/tree/main#readme"
 Source = "https://github.com/miltoncamacho/pylantir"
 Tracker = "https://github.com/miltoncamacho/pylantir/issues"
 
-[tool.flit.module]
-name = "pylantir"
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pylantir"]
 
 [tool.bandit]
 exclude_dirs = ["build","dist","tests","scripts"]

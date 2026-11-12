@@ -831,3 +831,9 @@ Control Cross-Origin Resource Sharing (CORS) for web frontend integration:
 To cleanly stop the MWL server and ensure the database synchronization properly, press `Ctrl + C` (you might need to press it twice).
 
 To stop the API server, use `Ctrl + C` in the terminal where it's running.
+
+## Package versions and releases
+
+Package versions are derived from Git tags using `hatch-vcs`; there is no version to edit in `pyproject.toml`. For example, pushing a tag `v0.4.9` builds package version `0.4.9`. Commit the release changes, tag that commit, then push the commit and tag. The tag workflow builds the wheel and source distribution, checks their versions against the tag, and publishes to PyPI using the existing `PYPI_PASSWORD` secret. CI no longer publishes separately on GitHub release creation.
+
+Pull requests to `main` also build and check distributions without publishing. Untagged development commits receive a development version derived from the latest tag. Local builds require a Git checkout with tags (`git fetch --tags`), or an unpacked source distribution produced by the build; GitHub's automatic source ZIP archives are not supported as build inputs. Build locally with `python -m build`. The source distribution retains the version when its wheel is built without Git metadata.
