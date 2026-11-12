@@ -222,6 +222,7 @@ The new configuration format uses a `data_sources` array to define one or more d
 - **`config`**: Source-specific configuration
   - For REDCap: `site`, `protocol`, and optional API credentials. `site_id` is still accepted for backward compatibility.
   - For REDCap: `mwl_days_ahead` controls the C-FIND visibility window. `0` (default) returns today only; `1` returns today and tomorrow.
+  - For `redcap` and `redcap_concussion` only: set `startup_lookback_hours` inside the source's `config` (for example, `"startup_lookback_hours": 72`) to fetch changes from the previous 72 hours on the first fetch after restart. Accepts a positive number, including fractional hours. Fetches still wait for operating hours. Failed fetches retry the startup window; a successful fetch, including an empty result, restores normal interval behavior. Omit this setting to preserve the existing startup window. This does not change the MWL visibility window or reconcile deleted REDCap records.
 - **`field_mapping`**: Maps source fields to DICOM worklist fields
 - **`window_mode`** (Calpendo optional): `rolling` (default) or `today`
 - **`daily_window`** (Calpendo optional): `{"start_time": [h, m], "end_time": [h, m]}`

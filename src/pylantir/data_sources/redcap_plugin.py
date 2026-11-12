@@ -9,6 +9,7 @@ Version: 1.0.0
 
 import os
 import logging
+import math
 import re
 from redcap.project import Project  # type: ignore
 import uuid
@@ -46,6 +47,8 @@ class REDCapPlugin(DataSourcePlugin):
         self._api_token = None
         self._site_id = None
         self._protocol = None
+        self._startup_lookback_hours = None
+        self._startup_fetch_pending = True
 
     def get_mwl_query_filter(
         self,
@@ -98,6 +101,15 @@ class REDCapPlugin(DataSourcePlugin):
         except PluginConfigError as exc:
             return (False, str(exc))
 
+        startup_hours = config.get("startup_lookback_hours")
+        if "startup_lookback_hours" in config and (
+            isinstance(startup_hours, bool)
+            or not isinstance(startup_hours, (int, float))
+            or not math.isfinite(startup_hours)
+            or startup_hours <= 0
+        ):
+            return (False, "startup_lookback_hours must be a finite number greater than zero")
+
         # Check required config keys
         if not site:
             return (False, "Missing required configuration key: site")
@@ -121,6 +133,7 @@ class REDCapPlugin(DataSourcePlugin):
 
         self._site_id = site
         self._protocol = config.get("protocol")
+        self._startup_lookback_hours = startup_hours
 
         self.logger.info(f"REDCap plugin validated for site {site}")
         return (True, "")
@@ -151,10 +164,17 @@ class REDCapPlugin(DataSourcePlugin):
                     redcap_fields.append(field)
 
             # Fetch from REDCap API
+            if self._startup_fetch_pending and self._startup_lookback_hours is not None:
+                interval = self._startup_lookback_hours * 3600
+                self.logger.info(
+                    "Startup REDCap fetch: looking back %s hours",
+                    self._startup_lookback_hours,
+                )
             raw_records = self._fetch_redcap_entries(redcap_fields, interval)
 
             # Transform to WorklistItem format
             entries = self._transform_records(raw_records, field_mapping)
+            self._startup_fetch_pending = False
 
             self.logger.info(f"Fetched {len(entries)} worklist entries from REDCap")
             return entries

@@ -23,6 +23,7 @@
             },
             "config": {
                 "site": "792",
+                "startup_lookback_hours": 72,
                 "protocol": {
                     "792": "BRAIN_MRI_3T",
                     "mapping": "GEHC"
@@ -55,6 +56,7 @@
             },
             "config": {
                 "site": "793",
+                "startup_lookback_hours": 72,
                 "protocol": {
                     "793": "BRAIN_MRI_1.5T"
                 }
